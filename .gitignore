@@ -1,3 +1,4 @@
 node_modules/
 admin-panel/data/
 *.log
+mediamtx/mediamtx.yml

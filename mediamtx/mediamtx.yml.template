@@ -1,0 +1,29 @@
+# Minimal MediaMTX config for the NOC Simulator.
+# Capture containers publish via RTMP; players can pull via RTSP, RTMP, or HLS.
+
+logLevel: info
+
+rtsp: yes
+protocols: [tcp]
+rtspAddress: :8554
+
+rtmp: yes
+rtmpAddress: :1935
+
+hls: yes
+hlsAddress: :8888
+hlsAllowOrigin: "*"
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcAllowOrigin: "*"
+# Required for WebRTC/WHEP to work at all: MediaMTX runs inside a Docker
+# container, so its auto-detected ICE host candidates are the container's
+# internal bridge IP (e.g. 172.18.x.x), which no external client can reach.
+# __PUBLIC_HOST__ is substituted with the real reachable host (LAN IP or
+# hostname) by mediamtx/render-config.sh before the container starts --
+# see that script and docker-compose.yml.
+webrtcAdditionalHosts: [__PUBLIC_HOST__]
+
+paths:
+  all_others:

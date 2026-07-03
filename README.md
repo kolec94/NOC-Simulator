@@ -88,10 +88,17 @@ http://<host>:8888/live/screen01/index.m3u8
 Setting up the actual player hardware (Raspberry Pi, smart TV app, media
 box) is a later step -- not covered here yet.
 
-**Viewing from another machine on the LAN:** set `PUBLIC_HOST` (env, used
-for the URLs shown in the admin panel) to this host's LAN IP, and add that
-same IP to `webrtcAdditionalHosts` in `mediamtx/mediamtx.yml` so WebRTC's
-ICE negotiation resolves correctly for remote viewers.
+**WebRTC/WHEP requires this to work at all, even locally on the LAN:**
+`mediamtx.yml` is generated from `mediamtx/mediamtx.yml.template` by
+`mediamtx/render-config.sh`, which fills in the host's real reachable IP
+(`webrtcAdditionalHosts`). Without this, MediaMTX advertises its own
+Docker-internal bridge IP as the ICE candidate, which no client can ever
+reach -- WHEP sessions connect and then immediately terminate, silently
+falling back to HLS (or failing outright). `install.sh` runs this
+automatically; for manual setups run `./mediamtx/render-config.sh` before
+`docker compose up` (re-run it if the host's IP changes). Set `PUBLIC_HOST`
+explicitly (env var, also used for the URLs shown in the admin panel) if
+auto-detection picks the wrong interface.
 
 ## The 40-screen catalog
 
@@ -144,7 +151,8 @@ scale-out path rather than trying to brute-force it here.
 ```bash
 git clone https://github.com/kolec94/NOC-Simulator.git
 cd NOC-Simulator
-docker compose build
+./mediamtx/render-config.sh                 # fills in this host's IP for WebRTC -- see below
+docker compose --profile build-only build   # capture image is profile-gated, see docker-compose.yml
 docker compose up -d
 ```
 

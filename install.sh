@@ -68,8 +68,14 @@ fi
 
 cd "$NOC_DIR"
 
+log "Rendering mediamtx config (fills in this host's IP for WebRTC)..."
+./mediamtx/render-config.sh
+
 log "Building images (this can take a few minutes the first time)..."
-$DOCKER compose build
+# --profile build-only is required or compose silently skips the capture
+# image (it's profile-gated so `docker compose up` doesn't try to start it
+# directly -- see docker-compose.yml).
+$DOCKER compose --profile build-only build
 
 log "Starting the stack..."
 $DOCKER compose up -d

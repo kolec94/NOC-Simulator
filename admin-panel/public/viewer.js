@@ -94,7 +94,14 @@ function playHls(streamPath) {
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = url;
     } else if (window.Hls && Hls.isSupported()) {
-        hls = new Hls();
+        // MediaMTX's HLS delivery relies on a session cookie (its
+        // "cookieCheck" redirect) to keep a viewer bound to one internal
+        // muxer session. The page (admin-panel, :8080) and the HLS server
+        // (mediamtx, :8888) are different origins, so that cookie is only
+        // sent if requests are made with credentials.
+        hls = new Hls({
+            xhrSetup: (xhr) => { xhr.withCredentials = true; }
+        });
         hls.loadSource(url);
         hls.attachMedia(video);
     } else {
