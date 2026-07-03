@@ -81,7 +81,10 @@ if [ -d "$NOC_DIR" ]; then
     fi
     $DOCKER network rm noc-net >/dev/null 2>&1 || true
 
-    rm -rf "$NOC_DIR"
+    # admin-panel/data is written by the container running as root, so its
+    # contents are root-owned on the host -- a plain rm as this user can
+    # fail on them. Fall back to sudo if needed.
+    rm -rf "$NOC_DIR" 2>/dev/null || sudo rm -rf "$NOC_DIR"
 fi
 
 log "Cloning $REPO_URL to $NOC_DIR..."
