@@ -13,8 +13,12 @@ On any apt-based Linux box (Ubuntu/Debian/WSL2 with systemd enabled):
 curl -fsSL https://raw.githubusercontent.com/kolec94/NOC-Simulator/master/install.sh | bash
 ```
 
-This installs Docker if it's missing, clones the repo, builds the images,
-and starts the stack. Safe to re-run (it'll just pull/rebuild/restart).
+This installs Docker if it's missing. If it finds a previous install
+already at `~/NOC-Simulator`, it **tears it down and removes it first**
+(backing up and restoring your registered screens + concurrency setting
+across the reinstall), then clones fresh and starts the stack. Safe to
+re-run any time, including to fix a broken/stale prior install -- that's
+the point of the auto-cleanup.
 
 Already have Docker? Skip the script:
 
@@ -28,10 +32,11 @@ The install script works on any machine with internet access -- it pulls
 from public GitHub, so it doesn't need to be on the same network as
 anything else you've set up.
 
-## Uninstall / clean reinstall
+## Uninstall (without reinstalling)
 
-To tear down a broken or old install before trying again (adjust the path
-if you cloned somewhere other than `~/NOC-Simulator`):
+`install.sh` handles clean-up-and-reinstall automatically (see above). If
+you just want it gone, with nothing reinstalled (adjust the path if you
+cloned somewhere other than `~/NOC-Simulator`):
 
 ```bash
 cd ~/NOC-Simulator && docker compose down --remove-orphans 2>/dev/null

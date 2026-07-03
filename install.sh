@@ -3,8 +3,11 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/kolec94/NOC-Simulator/master/install.sh | bash
 #
-# Installs git/curl/Docker if missing, clones (or updates) the repo, builds
-# the images, and starts the stack. Safe to re-run.
+# Installs git/curl/Docker if missing. If a previous install is found at
+# NOC_DIR, it's torn down and removed first (registered screens and the
+# concurrency setting are backed up and restored) for a guaranteed-clean
+# install -- handles a broken/stale prior install, not just a fresh one.
+# Then clones the repo, builds the images, and starts the stack.
 set -euo pipefail
 
 REPO_URL="https://github.com/kolec94/NOC-Simulator.git"
@@ -58,12 +61,37 @@ if ! docker info >/dev/null 2>&1; then
     DOCKER="sudo docker"
 fi
 
-if [ -d "$NOC_DIR/.git" ]; then
-    log "Existing checkout found at $NOC_DIR -- pulling latest..."
-    git -C "$NOC_DIR" pull --ff-only
-else
-    log "Cloning $REPO_URL to $NOC_DIR..."
-    git clone "$REPO_URL" "$NOC_DIR"
+BACKUP_DIR=""
+if [ -d "$NOC_DIR" ]; then
+    log "Existing install found at $NOC_DIR -- removing it for a clean install..."
+
+    if [ -f "$NOC_DIR/admin-panel/data/screens.json" ] || [ -f "$NOC_DIR/admin-panel/data/settings.json" ]; then
+        BACKUP_DIR=$(mktemp -d)
+        log "Backing up registered screens/concurrency setting to $BACKUP_DIR..."
+        cp -a "$NOC_DIR/admin-panel/data/." "$BACKUP_DIR/" 2>/dev/null || true
+    fi
+
+    if [ -f "$NOC_DIR/docker-compose.yml" ]; then
+        (cd "$NOC_DIR" && $DOCKER compose down --remove-orphans) 2>/dev/null || true
+    fi
+    OLD_CAPTURE_IDS=$($DOCKER ps -a --filter "name=noc-capture-" -q 2>/dev/null || true)
+    if [ -n "$OLD_CAPTURE_IDS" ]; then
+        # shellcheck disable=SC2086
+        $DOCKER rm -f $OLD_CAPTURE_IDS >/dev/null 2>&1 || true
+    fi
+    $DOCKER network rm noc-net >/dev/null 2>&1 || true
+
+    rm -rf "$NOC_DIR"
+fi
+
+log "Cloning $REPO_URL to $NOC_DIR..."
+git clone "$REPO_URL" "$NOC_DIR"
+
+if [ -n "$BACKUP_DIR" ]; then
+    log "Restoring registered screens/concurrency setting from backup..."
+    mkdir -p "$NOC_DIR/admin-panel/data"
+    cp -a "$BACKUP_DIR/." "$NOC_DIR/admin-panel/data/"
+    rm -rf "$BACKUP_DIR"
 fi
 
 cd "$NOC_DIR"
@@ -97,7 +125,8 @@ cat <<EOF
    HLS:   http://${HOST_IP}:8888/live/screen01/index.m3u8
 
  40 screens are pre-registered but NOT started (each one costs CPU/RAM).
- Start a few from the admin panel -- default cap is 8 concurrent
- (set MAX_CONCURRENT in docker-compose.yml to change it).
+ Start a few from the admin panel -- the concurrency slider at the top
+ defaults to a suggestion based on this machine's CPU cores, adjustable
+ live, no restart needed.
 ============================================================
 EOF
