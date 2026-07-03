@@ -82,8 +82,15 @@ if [ -d "$NOC_DIR" ]; then
     $DOCKER network rm noc-net >/dev/null 2>&1 || true
 
     # admin-panel/data is written by the container running as root, so its
-    # contents are root-owned on the host -- a plain rm as this user can
-    # fail on them. Fall back to sudo if needed.
+    # contents are root-owned on the host and a plain rm as this user
+    # fails on them. Fix ownership via a disposable container (using
+    # Docker's own root, which this user already has access to) rather
+    # than relying on host sudo, which may need an interactive password
+    # this script has no TTY to prompt for.
+    if [ -d "$NOC_DIR/admin-panel/data" ]; then
+        $DOCKER run --rm -v "$NOC_DIR/admin-panel/data:/data" alpine \
+            chown -R "$(id -u):$(id -g)" /data >/dev/null 2>&1 || true
+    fi
     rm -rf "$NOC_DIR" 2>/dev/null || sudo rm -rf "$NOC_DIR"
 fi
 
