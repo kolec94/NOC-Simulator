@@ -24,6 +24,34 @@ cd NOC-Simulator
 docker compose up -d --build
 ```
 
+The install script works on any machine with internet access -- it pulls
+from public GitHub, so it doesn't need to be on the same network as
+anything else you've set up.
+
+## Uninstall / clean reinstall
+
+To tear down a broken or old install before trying again (adjust the path
+if you cloned somewhere other than `~/NOC-Simulator`):
+
+```bash
+cd ~/NOC-Simulator && docker compose down --remove-orphans 2>/dev/null
+cd ~
+rm -rf ~/NOC-Simulator
+docker rm -f $(docker ps -a --filter "name=noc-capture-" -q) 2>/dev/null
+docker network rm noc-net 2>/dev/null
+```
+
+This stops/removes MediaMTX, the admin panel, any leftover
+`noc-capture-*` containers, the `noc-net` network, and deletes the old
+checkout. It does not touch your Docker installation itself. Then just
+re-run the install command above.
+
+**If the viewer shows nothing after a fresh install:** this almost always
+means WebRTC's ICE candidates are wrong for the new host -- see the WebRTC
+note under [Viewer](#viewer-realtime-switching). Run
+`PUBLIC_HOST=<this-host's-real-IP> bash mediamtx/render-config.sh` from
+the repo root, then `docker compose up -d --force-recreate mediamtx`.
+
 ## How it fits together
 
 ```
