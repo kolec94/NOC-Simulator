@@ -53,9 +53,12 @@ RTSP, RTMP, HLS, and WebRTC (WHEP) simultaneously.
 
 Open `http://localhost:8080`. 40 screens are pre-registered (see catalog
 below) but **not started** -- each running screen costs a Chromium +
-ffmpeg pipeline (roughly 1-2 CPU cores, 500MB+ RAM), so you start only the
-ones you want live. Concurrency is capped (`MAX_CONCURRENT`, default 8) to
-protect the host; the banner at the top shows current usage.
+ffmpeg pipeline, so you start only the ones you want live. A slider at the
+top caps how many can run concurrently: it defaults to `cores x 4` (auto-
+detected from the host, shown next to the slider), a rough starting point
+based on measured usage of ~10-25% CPU per stream -- not a hard limit.
+Drag it up or down any time; it's saved and takes effect immediately, no
+restart needed.
 
 From the table you can Start/Stop/Delete each screen and see its
 RTSP/RTMP/HLS/WHEP URLs once it's running. You can also add your own
@@ -135,34 +138,41 @@ contract.
 
 ## Capacity
 
-Each live screen = one Chromium + Xvfb + ffmpeg(x264) pipeline.
+Each live screen = one Chromium + Xvfb + ffmpeg(x264) pipeline. The
+concurrency slider in the admin panel defaults to `cores x 4`, but that's
+just a starting point -- watch actual usage (`docker stats`) and adjust.
 
-| Host | Practical concurrent streams (720p/15fps) |
-|---|---|
-| This laptop (WSL2, 16 cores / 13GB RAM, software x264) | ~6-10 |
-| `ai-test` VM (RTX 8000 passthrough, NVENC hardware encoding) | Scales much higher -- not yet deployed there; would need the capture image's ffmpeg command switched to `h264_nvenc` and the compose stack moved over |
+Measured on the `noc-sim` VM (4 cores / 15GB RAM, software x264, 720p/15fps):
+8 concurrent streams used ~124% CPU total (out of 400% available across 4
+cores, i.e. ~31%) -- most screens sit around 10-15% CPU each, with the
+heavier canvas-based templates (e.g. worldmap, satellites) running closer
+to 45-50%. Memory per stream is well under 100MB. On that hardware there's
+real headroom well past the default suggestion of 16.
 
-Running all 40 at once on modest hardware isn't realistic with software
-encoding -- that's why there's a concurrency cap and a documented
-scale-out path rather than trying to brute-force it here.
+For running all 40 at once on more constrained hardware, or for many more
+than 40, the scale-out path is hardware encoding: switch the capture
+image's ffmpeg command to `h264_nvenc` (or `h264_vaapi`/`h264_qsv`) and
+run on a host with a GPU -- `ai-test`'s passthrough RTX 8000 would be a
+candidate, not yet done.
 
 ## Manual / dev setup (no install.sh)
 
 ```bash
 git clone https://github.com/kolec94/NOC-Simulator.git
 cd NOC-Simulator
-./mediamtx/render-config.sh                 # fills in this host's IP for WebRTC -- see below
+bash ./mediamtx/render-config.sh            # fills in this host's IP for WebRTC -- see below
 docker compose --profile build-only build   # capture image is profile-gated, see docker-compose.yml
 docker compose up -d
 ```
 
 Config knobs (env vars, set in your shell or `docker-compose.yml`):
 
-- `MAX_CONCURRENT` (default 8) -- max simultaneous capture streams
 - `PUBLIC_HOST` (default `localhost`) -- host shown in playback URLs
 
-Data (registered screens) persists in `admin-panel/data/screens.json` on
-the host, bind-mounted into the container.
+Data persists on the host, bind-mounted into the container:
+
+- `admin-panel/data/screens.json` -- registered screens
+- `admin-panel/data/settings.json` -- the concurrency slider's current value
 
 ## Legacy
 

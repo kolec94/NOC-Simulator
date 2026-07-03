@@ -1,13 +1,20 @@
 const express = require('express');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const Docker = require('dockerode');
 const { buildCatalog } = require('./seeds');
 
 const PORT = process.env.PORT || 8080;
-const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT, 10) || 8;
+const CORES = os.cpus().length;
+// Rough starting heuristic from measured usage (~10-25% CPU per stream on
+// typical screens): a few streams per core. This is only ever a *default*
+// seed value -- the real cap is whatever's in settings.json, adjustable
+// live from the admin UI slider, with no hardcoded ceiling.
+const SUGGESTED_MAX = Math.max(1, CORES * 4);
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data', 'screens.json');
+const SETTINGS_FILE = process.env.SETTINGS_FILE || path.join(path.dirname(DATA_FILE), 'settings.json');
 const CAPTURE_IMAGE = process.env.CAPTURE_IMAGE || 'noc-simulator-capture';
 const NETWORK_NAME = process.env.NOC_NETWORK || 'noc-net';
 const MEDIAMTX_HOST = process.env.MEDIAMTX_HOST || 'mediamtx';
@@ -36,6 +43,20 @@ function loadScreens() {
 function saveScreens(screens) {
     fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
     fs.writeFileSync(DATA_FILE, JSON.stringify(screens, null, 2));
+}
+
+function loadSettings() {
+    if (!fs.existsSync(SETTINGS_FILE)) {
+        const defaults = { maxConcurrent: SUGGESTED_MAX };
+        saveSettings(defaults);
+        return defaults;
+    }
+    return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+}
+
+function saveSettings(settings) {
+    fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
 }
 
 function containerName(id) {
@@ -71,7 +92,23 @@ async function containerStatus(id) {
 }
 
 app.get('/api/status', async (req, res) => {
-    res.json({ running: await runningCaptureCount(), max: MAX_CONCURRENT });
+    res.json({
+        running: await runningCaptureCount(),
+        max: loadSettings().maxConcurrent,
+        cores: CORES,
+        suggestedMax: SUGGESTED_MAX
+    });
+});
+
+app.put('/api/settings', (req, res) => {
+    const { maxConcurrent } = req.body;
+    const value = parseInt(maxConcurrent, 10);
+    if (!Number.isInteger(value) || value < 1) {
+        return res.status(400).json({ error: 'maxConcurrent must be a positive integer' });
+    }
+    const settings = { ...loadSettings(), maxConcurrent: value };
+    saveSettings(settings);
+    res.json(settings);
 });
 
 app.get('/api/screens', async (req, res) => {
@@ -163,10 +200,11 @@ app.post('/api/screens/:id/start', async (req, res) => {
     if (status === 'running') return res.json({ status: 'running' });
 
     const running = await runningCaptureCount();
-    if (running >= MAX_CONCURRENT) {
+    const maxConcurrent = loadSettings().maxConcurrent;
+    if (running >= maxConcurrent) {
         return res.status(409).json({
-            error: `MAX_CONCURRENT limit reached (${running}/${MAX_CONCURRENT}). ` +
-                'Stop another screen first, or raise MAX_CONCURRENT.'
+            error: `Concurrent stream limit reached (${running}/${maxConcurrent}). ` +
+                'Stop another screen first, or raise the limit with the slider above.'
         });
     }
 

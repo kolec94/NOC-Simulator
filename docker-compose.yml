@@ -43,7 +43,6 @@ services:
       - MEDIAMTX_RTMP_PORT=1935
       - PUBLIC_HOST=${PUBLIC_HOST:-localhost}
       - ADMIN_INTERNAL_HOST=admin-panel
-      - MAX_CONCURRENT=${MAX_CONCURRENT:-8}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./admin-panel/data:/app/data

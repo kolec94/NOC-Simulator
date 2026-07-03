@@ -7,11 +7,52 @@ async function fetchScreens() {
     renderStatus(await statusRes.json());
 }
 
+const slider = document.getElementById('max-slider');
+const numberInput = document.getElementById('max-number');
+let editingMax = false;
+slider.addEventListener('focus', () => { editingMax = true; });
+numberInput.addEventListener('focus', () => { editingMax = true; });
+slider.addEventListener('blur', () => { editingMax = false; });
+numberInput.addEventListener('blur', () => { editingMax = false; });
+
 function renderStatus(status) {
     const el = document.getElementById('status-banner');
     el.textContent = `${status.running} / ${status.max} capture streams running`;
     el.className = status.running >= status.max ? 'banner-full' : 'banner-ok';
+
+    document.getElementById('max-suggested').textContent =
+        `(${status.cores} cores detected -- suggested default: ${status.suggestedMax})`;
+
+    if (!editingMax) {
+        const ceiling = Math.max(status.max, status.suggestedMax) * 3;
+        slider.max = ceiling;
+        numberInput.max = ceiling;
+        slider.value = status.max;
+        numberInput.value = status.max;
+    }
 }
+
+async function updateMaxConcurrent(value) {
+    const errorEl = document.getElementById('error');
+    errorEl.textContent = '';
+    try {
+        const res = await fetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ maxConcurrent: value })
+        });
+        if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+    } catch (err) {
+        errorEl.textContent = err.message;
+    }
+}
+
+slider.addEventListener('input', () => { numberInput.value = slider.value; });
+slider.addEventListener('change', () => updateMaxConcurrent(Number(slider.value)));
+numberInput.addEventListener('change', () => {
+    slider.value = numberInput.value;
+    updateMaxConcurrent(Number(numberInput.value));
+});
 
 function render(screens) {
     const rows = document.getElementById('rows');

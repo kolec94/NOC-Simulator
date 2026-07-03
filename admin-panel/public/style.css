@@ -51,3 +51,20 @@ form input {
 .banner-ok { background: #143314; color: #7CFC00; }
 .banner-full { background: #331414; color: #f66; }
 a { color: #9cf; }
+#max-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    font-size: 14px;
+}
+#max-control label { white-space: nowrap; }
+#max-slider { width: 240px; }
+#max-number {
+    width: 70px;
+    padding: 4px;
+    background: #1a1a1a;
+    border: 1px solid #444;
+    color: #ddd;
+}
+#max-suggested { color: #888; font-size: 12px; }

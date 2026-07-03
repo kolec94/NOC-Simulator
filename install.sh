@@ -69,7 +69,7 @@ fi
 cd "$NOC_DIR"
 
 log "Rendering mediamtx config (fills in this host's IP for WebRTC)..."
-./mediamtx/render-config.sh
+bash ./mediamtx/render-config.sh
 
 log "Building images (this can take a few minutes the first time)..."
 # --profile build-only is required or compose silently skips the capture
