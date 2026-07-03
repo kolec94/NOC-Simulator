@@ -1,0 +1,238 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NOC - Satellites</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+#sidebar {
+    position: absolute;
+    top: 0; right: 0;
+    bottom: 0;
+    width: 300px;
+    padding: 16px 14px;
+    box-sizing: border-box;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    background: rgba(0,0,0,0.35);
+    border-left: 1px solid rgba(255,255,255,0.15);
+    overflow: hidden;
+}
+#sidebar h2 {
+    font-size: 15px;
+    margin: 0 0 10px 0;
+    font-weight: normal;
+    letter-spacing: 1px;
+}
+.tel-row {
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.tel-name { font-weight: bold; }
+.tel-line { color: rgba(255,255,255,0.7); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="sidebar">
+    <h2 id="sb-title">TELEMETRY</h2>
+    <div id="sb-list"></div>
+</div>
+<script src="lib/params.js"></script>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const rng = NOC.rng;
+const speed = NOC.params.speed;
+const sbList = document.getElementById('sb-list');
+document.getElementById('sb-title').textContent = NOC.params.title;
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const SAT_COUNT = 4 + Math.floor(rng() * 5); // 4-8
+const EARTH_RADIUS_FRAC = 0.09;
+
+const sats = [];
+for (let i = 0; i < SAT_COUNT; i++) {
+    const radiusFrac = 0.18 + (i / SAT_COUNT) * 0.7 + rng() * 0.04;
+    const ecc = rng() * 0.25; // orbit ellipse squash
+    const angle0 = rng() * Math.PI * 2;
+    const dir = rng() < 0.5 ? 1 : -1;
+    const angularSpeed = dir * (0.15 + rng() * 0.35) / (radiusFrac * 8); // outer orbits slower
+    const tilt = (rng() - 0.5) * 0.5; // slight vertical squash variance per orbit
+
+    const altitudeKm = Math.round(400 + radiusFrac * 500 + rng() * 300);
+    const velocityKms = (7.8 - radiusFrac * 2 + rng() * 0.2).toFixed(2);
+    const periodMin = Math.round(90 + radiusFrac * 220 + rng() * 40);
+
+    sats.push({
+        id: "SAT-" + String(i + 1).padStart(2, '0'),
+        radiusFrac, ecc, angle: angle0, angularSpeed, tilt,
+        altitudeKm, velocityKms, periodMin,
+        hueShift: rng() * 20 - 10
+    });
+}
+
+function drawEarth(cx, cy, r) {
+    // globe body
+    const grad = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r);
+    grad.addColorStop(0, "rgba(255,255,255,0.15)");
+    grad.addColorStop(0.5, NOC.color(60, 22));
+    grad.addColorStop(1, NOC.color(80, 8));
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.shadowColor = NOC.color(100, 40);
+    ctx.shadowBlur = 30;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // latitude/longitude grid lines for globe look
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i++) {
+        const f = i / 4;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r, r * f, 0, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+    for (let i = 0; i < 4; i++) {
+        const f = i / 4;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r * Math.abs(Math.cos(f * Math.PI)), r, 0, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    // crude continent doodles (blobs)
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.beginPath();
+    ctx.ellipse(cx - r * 0.25, cy - r * 0.15, r * 0.35, r * 0.22, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + r * 0.3, cy + r * 0.25, r * 0.28, r * 0.16, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // outline
+    ctx.strokeStyle = NOC.color(100, 55);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+}
+
+function updateSidebar() {
+    let html = '';
+    sats.forEach(s => {
+        html += '<div class="tel-row">' +
+            '<div class="tel-name" style="color:' + NOC.color(90, 65) + '">' + s.id + '</div>' +
+            '<div class="tel-line">ALT: ' + s.altitudeKm + ' km</div>' +
+            '<div class="tel-line">VEL: ' + s.velocityKms + ' km/s</div>' +
+            '<div class="tel-line">PERIOD: ' + s.periodMin + ' min</div>' +
+        '</div>';
+    });
+    sbList.innerHTML = html;
+}
+updateSidebar();
+let sidebarTimer = 0;
+
+function draw() {
+    const w = canvas.width, h = canvas.height;
+    const sidebarW = 300;
+    const fieldW = w - sidebarW;
+    const cx = fieldW / 2, cy = h / 2;
+    const maxR = Math.min(fieldW, h) / 2 - 30;
+    const earthR = maxR * EARTH_RADIUS_FRAC * 2.2;
+
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, w, h);
+
+    // faint starfield (deterministic-ish, cheap: draw once pattern via modulo of frame count would drift,
+    // so just redraw a fixed set of dim static dots using rng at init time)
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    stars.forEach(st => {
+        ctx.globalAlpha = st.a;
+        ctx.fillRect(st.x, st.y, 1, 1);
+    });
+    ctx.globalAlpha = 1;
+
+    // orbit paths
+    sats.forEach(s => {
+        const r = maxR * s.radiusFrac;
+        const ry = r * (1 - s.ecc);
+        ctx.strokeStyle = "rgba(255,255,255,0.15)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r, ry, s.tilt, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+
+    drawEarth(cx, cy, earthR);
+
+    // satellites
+    sats.forEach(s => {
+        s.angle += s.angularSpeed * 0.02 * speed;
+        const r = maxR * s.radiusFrac;
+        const ry = r * (1 - s.ecc);
+        const localX = r * Math.cos(s.angle);
+        const localY = ry * Math.sin(s.angle);
+        const cosT = Math.cos(s.tilt), sinT = Math.sin(s.tilt);
+        const x = cx + localX * cosT - localY * sinT;
+        const y = cy + localX * sinT + localY * cosT;
+
+        // simple depth cue: satellites "behind" earth path (upper half of tilted ellipse) dim slightly
+        const behind = (localY * cosT + localX * sinT) < 0;
+
+        ctx.fillStyle = behind ? NOC.color(80, 35) : "#fff";
+        ctx.shadowColor = NOC.color(100, 55);
+        ctx.shadowBlur = behind ? 4 : 12;
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.font = "13px monospace";
+        ctx.fillStyle = behind ? "rgba(255,255,255,0.35)" : NOC.color(90, 70);
+        ctx.fillText(s.id, x + 8, y - 8);
+    });
+
+    ctx.font = "20px monospace";
+    ctx.fillStyle = NOC.color(100, 65);
+    ctx.fillText(NOC.params.title, 16, 28);
+    ctx.font = "13px monospace";
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.fillText("TRACKING " + sats.length + " OBJECTS", 16, h - 16);
+
+    sidebarTimer += speed;
+    if (sidebarTimer > 90) {
+        sidebarTimer = 0;
+        // subtle drift in telemetry to feel "live"
+        sats.forEach(s => {
+            s.altitudeKm += Math.round((rng() - 0.5) * 4);
+            s.velocityKms = (parseFloat(s.velocityKms) + (rng() - 0.5) * 0.02).toFixed(2);
+        });
+        updateSidebar();
+    }
+
+    requestAnimationFrame(draw);
+}
+
+const stars = [];
+for (let i = 0; i < 140; i++) {
+    stars.push({
+        x: rng() * (window.innerWidth - 300),
+        y: rng() * window.innerHeight,
+        a: 0.15 + rng() * 0.5
+    });
+}
+
+draw();
+</script>
+</body>
+</html>

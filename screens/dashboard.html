@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NOC - Dashboard</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+:root { --accent: #7CFC00; --accent-dim: #4a9; --border: #063; }
+body { color: var(--accent); padding: 40px; box-sizing: border-box; font-size: 28px; }
+h1 { text-align: center; letter-spacing: 6px; font-size: 36px; margin: 0 0 10px 0; }
+.timestamp { text-align: center; color: var(--accent-dim); margin-bottom: 30px; font-size: 22px; }
+.gauge-row { display: flex; align-items: center; margin: 18px 0; }
+.gauge-label { width: 110px; }
+.gauge-track { flex: 1; height: 34px; border: 2px solid var(--accent); background: #001a00; position: relative; }
+.gauge-fill { height: 100%; background: var(--accent); }
+.gauge-pct { width: 90px; text-align: right; }
+.footer { margin-top: 30px; color: var(--accent-dim); font-size: 22px; border-top: 1px solid var(--border); padding-top: 15px; }
+hr { border-color: var(--border); }
+</style>
+</head>
+<body>
+<h1 id="title">OPERATIONS STATUS - LIVE TELEMETRY</h1>
+<div class="timestamp" id="clock"></div>
+<hr>
+<div id="gauges"></div>
+<div class="footer" id="footer"></div>
+
+<script src="lib/params.js"></script>
+<script>
+document.documentElement.style.setProperty('--accent', NOC.color(100, 50));
+document.documentElement.style.setProperty('--accent-dim', NOC.color(60, 45));
+document.documentElement.style.setProperty('--border', NOC.color(80, 20));
+document.getElementById('title').textContent = NOC.params.title;
+
+const rng = NOC.rng;
+const speed = NOC.params.speed;
+
+const labels = ["CPU", "MEM", "NET", "GPU", "PWR", "I/O"];
+const values = {};
+labels.forEach(l => values[l] = 20 + rng() * 60);
+
+const gaugesEl = document.getElementById('gauges');
+labels.forEach(l => {
+    const row = document.createElement('div');
+    row.className = 'gauge-row';
+    row.innerHTML = `
+        <div class="gauge-label">${l}</div>
+        <div class="gauge-track"><div class="gauge-fill" id="fill-${l}"></div></div>
+        <div class="gauge-pct" id="pct-${l}"></div>
+    `;
+    gaugesEl.appendChild(row);
+});
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function tick() {
+    const now = new Date();
+    document.getElementById('clock').textContent = now.toISOString().replace('T', ' ').substring(0, 19);
+
+    labels.forEach(l => {
+        values[l] = clamp(values[l] + (rng() * 16 - 8) * speed, 5, 99);
+        const pct = Math.round(values[l]);
+        document.getElementById(`fill-${l}`).style.width = pct + '%';
+        document.getElementById(`pct-${l}`).textContent = pct + '%';
+    });
+
+    const statuses = ["NOMINAL", "NOMINAL", "NOMINAL", "STANDBY", "NOMINAL"];
+    const status = statuses[Math.floor(rng() * statuses.length)];
+    const nodes = Math.floor(rng() * 6) + 6;
+    document.getElementById('footer').textContent =
+        `LINK STATUS: ${status}    NODES ONLINE: ${nodes}/12`;
+}
+tick();
+setInterval(tick, 700);
+</script>
+</body>
+</html>

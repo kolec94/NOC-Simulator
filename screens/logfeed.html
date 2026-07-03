@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NOC - Log Feed</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+body { padding: 20px; box-sizing: border-box; font-size: 22px; }
+#header { color: #999; margin-bottom: 10px; letter-spacing: 3px; }
+#log { white-space: pre; }
+.ok { color: var(--accent, #0f0); }
+.warn { color: #ff0; }
+.alert { color: #f33; }
+</style>
+</head>
+<body>
+<div id="header"></div>
+<div id="log"></div>
+<script src="lib/params.js"></script>
+<script>
+document.documentElement.style.setProperty('--accent', NOC.color(100, 50));
+document.getElementById('header').textContent = "=== " + NOC.params.title + " ===";
+
+const rng = NOC.rng;
+const speed = NOC.params.speed;
+
+const procs = ["auth-svc","gateway","ingest-worker","cache-node","sched","webui","ollama-rt","tsnet","balloon-drv","update-daemon"];
+const actions = ["handshake complete","heartbeat ok","memory page synced","request routed","token refreshed","block committed","cache hit","gc cycle complete","peer reconnected","config reloaded"];
+const hosts = ["10.0.4.12","10.0.4.19","100.72.137.71","192.168.8.207","10.0.7.101"];
+
+function pick(arr) { return arr[Math.floor(rng() * arr.length)]; }
+function hex(len) {
+    let s = "";
+    for (let i = 0; i < len; i++) s += Math.floor(rng() * 16).toString(16);
+    return s;
+}
+function pad(s, n) { return (s + " ".repeat(n)).substring(0, n); }
+
+const logEl = document.getElementById('log');
+const maxLines = 45;
+
+function addLine() {
+    const ts = new Date().toISOString().substring(11, 23);
+    const roll = rng() * 100;
+    const line = document.createElement('div');
+
+    if (roll <= 6) {
+        line.className = 'warn';
+        line.textContent = `[${ts}] WARN  ${pick(procs)} retry backoff triggered (attempt ${1 + Math.floor(rng()*4)})`;
+    } else if (roll <= 9) {
+        line.className = 'alert';
+        line.textContent = `[${ts}] ALERT ${pick(procs)} threshold exceeded on ${pick(hosts)}`;
+    } else {
+        line.className = 'ok';
+        line.textContent = `[${ts}] OK    ${pad(pick(procs),14)} ${pad(pick(actions),26)} host=${pad(pick(hosts),15)} tx=0x${hex(12)}`;
+    }
+
+    logEl.appendChild(line);
+    while (logEl.children.length > maxLines) logEl.removeChild(logEl.firstChild);
+}
+
+function loop() {
+    addLine();
+    setTimeout(loop, (80 + rng() * 180) / speed);
+}
+loop();
+</script>
+</body>
+</html>

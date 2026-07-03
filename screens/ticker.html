@@ -1,0 +1,189 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NOC - Ticker Board</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="lib/params.js"></script>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const rng = NOC.rng;
+const speed = NOC.params.speed;
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const KNOWN = ["BTC", "ETH", "SOL", "XRP", "DOGE", "LTC"];
+const PREFIX = ["NOC", "ORB", "VEX", "KRN", "ZTA", "GRD", "PHX", "QNT"];
+
+function genSymbol(i) {
+    if (i < KNOWN.length && rng() > 0.4) return KNOWN[i];
+    const p = PREFIX[Math.floor(rng() * PREFIX.length)];
+    const n = 1 + Math.floor(rng() * 9);
+    return p + "-" + n;
+}
+
+const ROW_COUNT = 16;
+const HIST_LEN = 30;
+
+const rows = [];
+const usedSymbols = new Set();
+for (let i = 0; i < ROW_COUNT; i++) {
+    let sym;
+    do { sym = genSymbol(i); } while (usedSymbols.has(sym));
+    usedSymbols.add(sym);
+
+    const start = 1 + rng() * 4000;
+    const history = [];
+    let v = start;
+    for (let k = 0; k < HIST_LEN; k++) {
+        v = Math.max(0.01, v * (1 + (rng() - 0.5) * 0.03));
+        history.push(v);
+    }
+    rows.push({
+        symbol: sym,
+        price: history[history.length - 1],
+        prevPrice: history[history.length - 2],
+        history,
+        tickTimer: rng() * 1.5
+    });
+}
+
+function tickRow(r) {
+    r.prevPrice = r.price;
+    const pct = (rng() - 0.5) * 0.035;
+    r.price = Math.max(0.01, r.price * (1 + pct));
+    r.history.push(r.price);
+    if (r.history.length > HIST_LEN) r.history.shift();
+}
+
+function formatPrice(p) {
+    if (p >= 1000) return p.toFixed(0);
+    if (p >= 1) return p.toFixed(2);
+    return p.toFixed(4);
+}
+
+function drawSparkline(x, y, w, h, history, up) {
+    const min = Math.min(...history);
+    const max = Math.max(...history);
+    const range = (max - min) || 1;
+
+    ctx.beginPath();
+    history.forEach((v, i) => {
+        const px = x + (i / (history.length - 1)) * w;
+        const py = y + h - ((v - min) / range) * h;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    });
+    ctx.strokeStyle = up ? "#2ee66b" : "#ff4444";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+}
+
+const ROW_H = 34;
+let scrollY = 0;
+
+let lastTime = performance.now();
+
+function draw() {
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - lastTime) / 1000) * speed;
+    lastTime = now;
+
+    const w = canvas.width, h = canvas.height;
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, w, h);
+
+    // update prices
+    rows.forEach(r => {
+        r.tickTimer -= dt;
+        if (r.tickTimer <= 0) {
+            tickRow(r);
+            r.tickTimer = 0.9 + rng() * 1.4;
+        }
+    });
+
+    const headerH = 48;
+    const footerH = 28;
+    const boardTop = headerH;
+    const boardH = h - headerH - footerH;
+
+    // header
+    ctx.fillStyle = NOC.color(30, 10);
+    ctx.fillRect(0, 0, w, headerH);
+    ctx.fillStyle = NOC.color(100, 60);
+    ctx.font = "bold 20px monospace";
+    ctx.fillText(NOC.params.title, 16, 31);
+    ctx.font = "14px monospace";
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    const hdrRight = "LIVE FEED - " + rows.length + " SYMBOLS";
+    ctx.fillText(hdrRight, w - ctx.measureText(hdrRight).width - 16, 31);
+
+    // scrolling board: draw the row list twice back-to-back and wrap the
+    // vertical offset so it loops seamlessly.
+    const totalH = rows.length * ROW_H;
+    scrollY += dt * 22; // px/sec scroll speed
+    if (scrollY >= totalH) scrollY -= totalH;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, boardTop, w, boardH);
+    ctx.clip();
+
+    const colSymbol = 24;
+    const colPrice = 200;
+    const colChange = 340;
+    const sparkX = 470;
+    const sparkW = Math.max(120, w - sparkX - 24);
+
+    let startY = boardTop - (scrollY % totalH);
+    for (let pass = 0; pass < Math.ceil(boardH / totalH) + 2; pass++) {
+        rows.forEach((r, i) => {
+            const y = startY + i * ROW_H + pass * totalH;
+            if (y < boardTop - ROW_H || y > boardTop + boardH) return;
+
+            const up = r.price >= r.prevPrice;
+            const color = up ? "#2ee66b" : "#ff4444";
+            const pct = r.prevPrice ? ((r.price - r.prevPrice) / r.prevPrice) * 100 : 0;
+
+            if (i % 2 === 0) {
+                ctx.fillStyle = "rgba(255,255,255,0.03)";
+                ctx.fillRect(0, y, w, ROW_H);
+            }
+
+            ctx.font = "bold 16px monospace";
+            ctx.fillStyle = "#fff";
+            ctx.fillText(r.symbol, colSymbol, y + ROW_H * 0.68);
+
+            ctx.font = "16px monospace";
+            ctx.fillStyle = color;
+            ctx.fillText(formatPrice(r.price), colPrice, y + ROW_H * 0.68);
+
+            const arrow = up ? "^ " : "v ";
+            ctx.fillText(arrow + Math.abs(pct).toFixed(2) + "%", colChange, y + ROW_H * 0.68);
+
+            drawSparkline(sparkX, y + 4, sparkW, ROW_H - 10, r.history, up);
+        });
+    }
+    ctx.restore();
+
+    // footer
+    ctx.fillStyle = NOC.color(30, 10);
+    ctx.fillRect(0, h - footerH, w, footerH);
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.font = "13px monospace";
+    ctx.fillText("SIMULATED MARKET DATA - NOC INTERNAL FEED", 16, h - 9);
+
+    requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>

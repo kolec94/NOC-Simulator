@@ -1,0 +1,101 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NOC - Radar</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="lib/params.js"></script>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const rng = NOC.rng;
+const speed = NOC.params.speed;
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const blipCount = 3 + Math.floor(rng() * 4);
+const blips = [];
+for (let i = 0; i < blipCount; i++) {
+    blips.push({
+        angleOffset: rng() * Math.PI * 2,
+        radiusFrac: 0.3 + rng() * 0.6,
+        label: "T-" + String(i + 1).padStart(2, '0')
+    });
+}
+
+let angle = 0;
+
+function draw() {
+    const w = canvas.width, h = canvas.height;
+    const cx = w / 2, cy = h / 2;
+    const radius = Math.min(w, h) / 2 - 40;
+
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = NOC.color(100, 50);
+    ctx.lineWidth = 2;
+    [1, 0.66, 0.33].forEach(f => {
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * f, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+    ctx.beginPath();
+    ctx.moveTo(cx - radius, cy); ctx.lineTo(cx + radius, cy);
+    ctx.moveTo(cx, cy - radius); ctx.lineTo(cx, cy + radius);
+    ctx.stroke();
+
+    // sweep beam with fading trail
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, radius, angle - 0.5, angle);
+    ctx.closePath();
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = NOC.color(100, 50);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + radius * Math.cos(angle), cy + radius * Math.sin(angle));
+    ctx.strokeStyle = NOC.color(100, 65);
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // blips, lit up briefly as the sweep passes them
+    ctx.font = "18px monospace";
+    blips.forEach(b => {
+        const bx = cx + radius * b.radiusFrac * Math.cos(b.angleOffset);
+        const by = cy + radius * b.radiusFrac * Math.sin(b.angleOffset);
+        let diff = Math.abs(((angle - b.angleOffset + Math.PI) % (Math.PI * 2)) - Math.PI);
+        const lit = diff < 0.5;
+        ctx.fillStyle = lit ? "#fff" : NOC.color(80, 20);
+        ctx.beginPath();
+        ctx.arc(bx, by, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = lit ? "#fff" : NOC.color(100, 35);
+        ctx.fillText(b.label, bx + 10, by - 10);
+    });
+
+    ctx.fillStyle = NOC.color(100, 50);
+    ctx.font = "20px monospace";
+    ctx.fillText(NOC.params.title + " - CONTACTS: " + blips.length, 20, 30);
+    ctx.fillText("BEARING: " + Math.round((angle * 180 / Math.PI) % 360) + "deg", 20, h - 20);
+
+    angle += 0.025 * speed;
+    requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>

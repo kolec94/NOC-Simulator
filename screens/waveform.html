@@ -1,0 +1,164 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NOC - Waveform</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="lib/params.js"></script>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const rng = NOC.rng;
+const speed = NOC.params.speed;
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// --- scrolling waveform traces (top half) ---
+const traceCount = 3;
+const traces = [];
+for (let i = 0; i < traceCount; i++) {
+    traces.push({
+        freq: 0.015 + rng() * 0.03,
+        freq2: 0.04 + rng() * 0.08,
+        phase: rng() * Math.PI * 2,
+        speedMul: 0.6 + rng() * 1.2,
+        noiseAmp: 0.06 + rng() * 0.1,
+        ampMul: 0.55 + i * 0.15,
+        lightness: 40 + i * 12
+    });
+}
+let t = 0;
+
+// --- spectrum analyzer (bottom half) ---
+const barCount = 28;
+const bars = new Array(barCount).fill(0).map(() => rng());
+const barTargets = new Array(barCount).fill(0).map(() => rng());
+const barVel = new Array(barCount).fill(0);
+
+function updateSpectrum() {
+    for (let i = 0; i < barCount; i++) {
+        // occasionally pick a new target height, biased toward mid-low freq bars being taller
+        if (rng() < 0.04 * speed) {
+            const bias = 1 - Math.abs(i - barCount * 0.35) / barCount;
+            barTargets[i] = Math.max(0.05, Math.min(1, bias * 0.6 + rng() * 0.6));
+        }
+        // ease toward target with a little jitter for a "live" feel
+        bars[i] += (barTargets[i] - bars[i]) * 0.18 * speed;
+        bars[i] += (rng() - 0.5) * 0.02 * speed;
+        bars[i] = Math.max(0.03, Math.min(1, bars[i]));
+    }
+}
+
+function drawWaveforms(w, topH) {
+    const midY = topH / 2;
+    traces.forEach((tr, idx) => {
+        ctx.beginPath();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = NOC.color(100, tr.lightness);
+        ctx.shadowColor = NOC.color(100, 55);
+        ctx.shadowBlur = 14;
+        const amp = (topH * 0.36) * tr.ampMul / traceCount * 1.6;
+        for (let x = 0; x <= w; x += 4) {
+            const sampleT = (x + t * tr.speedMul) * tr.freq + tr.phase;
+            const sampleT2 = (x + t * tr.speedMul * 1.7) * tr.freq2;
+            const noise = (rng() - 0.5) * tr.noiseAmp;
+            const y = midY + Math.sin(sampleT) * amp * 0.7
+                     + Math.sin(sampleT2) * amp * 0.25
+                     + noise * amp;
+            if (x === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+    });
+
+    // baseline grid ticks
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.lineWidth = 1;
+    for (let gx = 0; gx < w; gx += 80) {
+        ctx.beginPath();
+        ctx.moveTo(gx, 0);
+        ctx.lineTo(gx, topH);
+        ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(0, midY);
+    ctx.lineTo(w, midY);
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.stroke();
+}
+
+function drawSpectrum(w, topH, bottomH) {
+    const gap = 6;
+    const barW = (w - gap * (barCount + 1)) / barCount;
+    const baseY = topH + bottomH - 10;
+    const maxBarH = bottomH - 40;
+
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, topH);
+    ctx.lineTo(w, topH);
+    ctx.stroke();
+
+    for (let i = 0; i < barCount; i++) {
+        const bx = gap + i * (barW + gap);
+        const bh = bars[i] * maxBarH;
+        const grad = ctx.createLinearGradient(0, baseY - bh, 0, baseY);
+        grad.addColorStop(0, NOC.color(100, 65));
+        grad.addColorStop(1, NOC.color(100, 30));
+        ctx.fillStyle = grad;
+        ctx.shadowColor = NOC.color(100, 50);
+        ctx.shadowBlur = 10;
+        ctx.fillRect(bx, baseY - bh, barW, bh);
+        ctx.shadowBlur = 0;
+
+        // peak cap
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(bx, baseY - bh - 3, barW, 2);
+    }
+}
+
+function draw() {
+    const w = canvas.width, h = canvas.height;
+    const topH = h * 0.55;
+    const bottomH = h - topH;
+
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(0, 0, w, h);
+
+    drawWaveforms(w, topH);
+    drawSpectrum(w, topH, bottomH);
+    updateSpectrum();
+
+    // divider
+    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    ctx.beginPath();
+    ctx.moveTo(0, topH);
+    ctx.lineTo(w, topH);
+    ctx.stroke();
+
+    // header / label
+    ctx.font = "20px monospace";
+    ctx.fillStyle = NOC.color(100, 65);
+    ctx.fillText(NOC.params.title, 16, 26);
+    ctx.font = "14px monospace";
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fillText("CH1-CH3 SCOPE", w - 150, 20);
+    ctx.fillText("SPECTRUM  " + barCount + " BANDS", w - 170, topH + 18);
+
+    t += 1.4 * speed;
+    requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+body {
+    font-family: -apple-system, Segoe UI, Arial, sans-serif;
+    background: #111;
+    color: #ddd;
+    padding: 30px;
+}
+h1, h2 { color: #7CFC00; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 30px;
+}
+th, td {
+    border: 1px solid #333;
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 14px;
+}
+th { background: #1a1a1a; }
+tr:nth-child(even) { background: #1a1a1a; }
+.status-running { color: #7CFC00; font-weight: bold; }
+.status-stopped { color: #888; }
+button {
+    background: #222;
+    color: #ddd;
+    border: 1px solid #444;
+    padding: 5px 12px;
+    cursor: pointer;
+    margin-right: 4px;
+}
+button:hover { background: #333; }
+button.danger:hover { background: #522; }
+form input {
+    margin-right: 8px;
+    margin-bottom: 8px;
+    padding: 6px;
+    background: #1a1a1a;
+    border: 1px solid #444;
+    color: #ddd;
+}
+#error { color: #f66; margin-top: 10px; }
+.urls { font-size: 12px; line-height: 1.6; }
+.urls code { color: #9cf; }
+#status-banner {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: 3px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+.banner-ok { background: #143314; color: #7CFC00; }
+.banner-full { background: #331414; color: #f66; }
+a { color: #9cf; }

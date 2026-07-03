@@ -1,0 +1,163 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NOC - Server Rack</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+:root { --accent: #7CFC00; --accent-dim: #4a9; --border: #063; }
+body { color: var(--accent); box-sizing: border-box; font-size: 16px; padding: 18px 26px; }
+.header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 2px solid var(--border); padding-bottom: 8px; margin-bottom: 10px; }
+.header .title { font-size: 22px; letter-spacing: 4px; }
+.header .clock { color: var(--accent-dim); font-size: 16px; }
+.rack { border: 3px solid var(--border); background: #000d00; padding: 8px; }
+.unit { display: flex; align-items: center; padding: 5px 10px; border-bottom: 1px solid #032; height: 30px; }
+.unit:last-child { border-bottom: none; }
+.unit .uid { width: 40px; color: var(--accent-dim); font-size: 13px; }
+.unit .name { width: 110px; font-weight: bold; letter-spacing: 1px; }
+.unit .leds { display: flex; gap: 6px; width: 160px; }
+.led { width: 13px; height: 13px; border-radius: 50%; background: #041a04; border: 1px solid #063; box-shadow: none; }
+.led.on-green { background: #1aff3c; box-shadow: 0 0 6px 2px #1aff3c; }
+.led.on-amber { background: #ffb300; box-shadow: 0 0 6px 2px #ffb300; }
+.led.on-red { background: #ff2020; box-shadow: 0 0 7px 3px #ff2020; }
+.unit .bar-wrap { flex: 1; height: 12px; border: 1px solid var(--border); margin-right: 14px; position: relative; background: #001400; }
+.unit .bar-fill { height: 100%; background: var(--accent-dim); }
+.unit .temp { width: 90px; text-align: right; font-size: 15px; }
+.unit .temp.hot { color: #ff8020; }
+.unit .temp.warn { color: #ffcc33; }
+.legend { margin-top: 12px; color: var(--accent-dim); font-size: 14px; display: flex; gap: 26px; border-top: 1px solid var(--border); padding-top: 8px; }
+.legend .sw { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<div class="header">
+    <div class="title" id="title">RACK ELEVATION</div>
+    <div class="clock" id="clock"></div>
+</div>
+<div class="rack" id="rack"></div>
+<div class="legend">
+    <span><span class="sw" style="background:#1aff3c;box-shadow:0 0 6px 2px #1aff3c;"></span>OK</span>
+    <span><span class="sw" style="background:#ffb300;box-shadow:0 0 6px 2px #ffb300;"></span>WARN</span>
+    <span><span class="sw" style="background:#ff2020;box-shadow:0 0 7px 3px #ff2020;"></span>FAULT</span>
+    <span id="legend-count"></span>
+</div>
+
+<script src="lib/params.js"></script>
+<script>
+document.documentElement.style.setProperty('--accent', NOC.color(100, 55));
+document.documentElement.style.setProperty('--accent-dim', NOC.color(55, 45));
+document.documentElement.style.setProperty('--border', NOC.color(80, 22));
+document.getElementById('title').textContent = NOC.params.title || 'RACK ELEVATION';
+
+const rng = NOC.rng;
+const speed = NOC.params.speed;
+const LEDS_PER_UNIT = 5;
+
+const unitDefs = [
+    { name: 'SRV-08', kind: 'server' },
+    { name: 'SRV-07', kind: 'server' },
+    { name: 'SW-02',  kind: 'switch' },
+    { name: 'SRV-06', kind: 'server' },
+    { name: 'SRV-05', kind: 'server' },
+    { name: 'PDU-2',  kind: 'pdu' },
+    { name: 'SRV-04', kind: 'server' },
+    { name: 'SRV-03', kind: 'server' },
+    { name: 'RTR-1',  kind: 'router' },
+    { name: 'SRV-02', kind: 'server' },
+    { name: 'SW-01',  kind: 'switch' },
+    { name: 'SRV-01', kind: 'server' },
+    { name: 'PDU-1',  kind: 'pdu' },
+    { name: 'UPS-1',  kind: 'ups' }
+];
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+const rackEl = document.getElementById('rack');
+const units = unitDefs.map((def, i) => {
+    const uNum = unitDefs.length - i;
+    const baseTemp = def.kind === 'pdu' || def.kind === 'ups'
+        ? 24 + rng() * 6
+        : 27 + rng() * 14;
+    const load = 20 + rng() * 60;
+
+    const row = document.createElement('div');
+    row.className = 'unit';
+    row.innerHTML = `
+        <div class="uid">U${uNum}</div>
+        <div class="name">${def.name}</div>
+        <div class="leds"></div>
+        <div class="bar-wrap"><div class="bar-fill"></div></div>
+        <div class="temp"></div>
+    `;
+    rackEl.appendChild(row);
+
+    const ledsEl = row.querySelector('.leds');
+    const ledEls = [];
+    for (let j = 0; j < LEDS_PER_UNIT; j++) {
+        const led = document.createElement('span');
+        led.className = 'led';
+        ledsEl.appendChild(led);
+        ledEls.push(led);
+    }
+
+    return {
+        def, temp: baseTemp, load,
+        barFill: row.querySelector('.bar-fill'),
+        tempEl: row.querySelector('.temp'),
+        ledEls,
+        ledStates: new Array(LEDS_PER_UNIT).fill('green'),
+        faultLed: Math.floor(rng() * LEDS_PER_UNIT)
+    };
+});
+
+let faultCount = 0;
+
+function updateLeds() {
+    faultCount = 0;
+    units.forEach(u => {
+        for (let i = 0; i < LEDS_PER_UNIT; i++) {
+            const led = u.ledEls[i];
+            let state = 'green';
+            if (i === u.faultLed) {
+                const roll = rng();
+                if (roll < 0.05) state = 'red';
+                else if (roll < 0.16) state = 'amber';
+                else state = 'green';
+            }
+            u.ledStates[i] = state;
+            const blinkOn = rng() > (state === 'red' ? 0.25 : 0.4);
+            led.className = 'led' + (blinkOn ? ' on-' + state : '');
+            if (state !== 'green' && blinkOn) faultCount++;
+        }
+    });
+    document.getElementById('legend-count').textContent =
+        `ACTIVE ALERTS: ${faultCount}`;
+}
+
+function updateTelemetry() {
+    units.forEach(u => {
+        u.temp = clamp(u.temp + (rng() - 0.48) * 0.7, 16, 58);
+        u.load = clamp(u.load + (rng() - 0.5) * 6, 4, 98);
+        u.barFill.style.width = u.load.toFixed(0) + '%';
+        const tempStr = u.temp.toFixed(1) + ' C';
+        u.tempEl.textContent = tempStr;
+        u.tempEl.className = 'temp' + (u.temp > 45 ? ' hot' : (u.temp > 36 ? ' warn' : ''));
+    });
+}
+
+function updateClock() {
+    const now = new Date();
+    document.getElementById('clock').textContent =
+        now.toISOString().replace('T', ' ').substring(0, 19) + 'Z';
+}
+
+updateLeds();
+updateTelemetry();
+updateClock();
+
+setInterval(updateLeds, Math.max(120, 420 / speed));
+setInterval(updateTelemetry, Math.max(400, 2600 / speed));
+setInterval(updateClock, 1000);
+</script>
+</body>
+</html>

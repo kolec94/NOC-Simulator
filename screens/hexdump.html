@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NOC - Hexdump</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+#pane {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    padding: 10px 14px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 16px;
+    line-height: 1.35;
+    white-space: pre;
+    overflow: hidden;
+}
+#hdr {
+    position: absolute;
+    top: 8px; right: 16px;
+    font-size: 14px;
+    color: rgba(255,255,255,0.55);
+}
+</style>
+</head>
+<body>
+<div id="pane"></div>
+<div id="hdr"></div>
+<script src="lib/params.js"></script>
+<script>
+const rng = NOC.rng;
+const speed = NOC.params.speed;
+const pane = document.getElementById('pane');
+const hdr = document.getElementById('hdr');
+hdr.textContent = NOC.params.title;
+
+const BYTES_PER_LINE = 16;
+let addr = Math.floor(rng() * 0xFFFF0000);
+
+function hex(n, width) {
+    return n.toString(16).toUpperCase().padStart(width, '0');
+}
+
+function randByte() {
+    return Math.floor(rng() * 256);
+}
+
+function asciiFor(b) {
+    return (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.';
+}
+
+function lineHtml() {
+    const bytes = [];
+    for (let i = 0; i < BYTES_PER_LINE; i++) bytes.push(randByte());
+
+    // occasionally flag this line as "interesting" (found pattern / anomaly)
+    const interesting = rng() < 0.08;
+
+    let hexPart = '';
+    for (let i = 0; i < BYTES_PER_LINE; i++) {
+        hexPart += hex(bytes[i], 2) + ' ';
+        if (i === 7) hexPart += ' ';
+    }
+
+    let asciiPart = '';
+    for (let i = 0; i < BYTES_PER_LINE; i++) asciiPart += asciiFor(bytes[i]);
+
+    const addrStr = hex(addr, 8);
+    addr += BYTES_PER_LINE;
+
+    const tag = interesting ? (rng() < 0.5 ? '  <-- ANOMALY' : '  <-- MATCH') : '';
+    const line = document.createElement('div');
+    if (interesting) {
+        line.style.background = NOC.color(70, 20);
+        line.style.color = '#fff';
+    } else {
+        line.style.color = NOC.color(rng() < 0.15 ? 100 : 60, rng() < 0.15 ? 65 : 45);
+    }
+    line.textContent = addrStr + ':  ' + hexPart + ' |' + asciiPart + '|' + tag;
+    return line;
+}
+
+let lines = [];
+let maxLines = 10;
+
+function computeMaxLines() {
+    const lineHeight = 16 * 1.35;
+    maxLines = Math.max(8, Math.floor(window.innerHeight / lineHeight) - 1);
+}
+window.addEventListener('resize', computeMaxLines);
+computeMaxLines();
+
+function tick() {
+    const n = Math.max(1, Math.round(1 * speed));
+    for (let i = 0; i < n; i++) {
+        lines.push(lineHtml());
+    }
+    while (lines.length > maxLines) {
+        const old = lines.shift();
+        if (old.parentNode) old.parentNode.removeChild(old);
+    }
+    pane.innerHTML = '';
+    lines.forEach(l => pane.appendChild(l));
+
+    const interval = Math.max(20, 90 / speed);
+    setTimeout(tick, interval);
+}
+tick();
+</script>
+</body>
+</html>

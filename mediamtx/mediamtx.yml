@@ -1,0 +1,26 @@
+# Minimal MediaMTX config for the NOC Simulator.
+# Capture containers publish via RTMP; players can pull via RTSP, RTMP, or HLS.
+
+logLevel: info
+
+rtsp: yes
+protocols: [tcp]
+rtspAddress: :8554
+
+rtmp: yes
+rtmpAddress: :1935
+
+hls: yes
+hlsAddress: :8888
+hlsAllowOrigin: "*"
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcAllowOrigin: "*"
+# If viewing from another machine on the LAN, set this to the host's LAN IP
+# (or hostname) so ICE candidates resolve correctly for remote players --
+# see README. Defaults to loopback/local-discovery only.
+webrtcAdditionalHosts: []
+
+paths:
+  all_others:

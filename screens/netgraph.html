@@ -1,0 +1,208 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NOC - Network Graph</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="lib/params.js"></script>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const rng = NOC.rng;
+const speed = NOC.params.speed;
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const NODE_COUNT = 15 + Math.floor(rng() * 11); // 15-25
+
+function code(i) {
+    const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    const letter = letters[i % letters.length];
+    const num = 1 + Math.floor(i / letters.length) + Math.floor(rng() * 9);
+    return "NODE-" + letter + num;
+}
+
+const nodes = [];
+for (let i = 0; i < NODE_COUNT; i++) {
+    nodes.push({
+        label: code(i),
+        // base position in normalized [0.08, 0.92] space, laid out roughly
+        // in a scattered grid then jittered so it doesn't look too uniform
+        bx: 0.1 + rng() * 0.8,
+        by: 0.14 + rng() * 0.72,
+        phase: rng() * Math.PI * 2,
+        phase2: rng() * Math.PI * 2,
+        driftAmpX: 0.01 + rng() * 0.015,
+        driftAmpY: 0.01 + rng() * 0.015,
+        driftSpeed: 0.3 + rng() * 0.4,
+        activeUntil: 0,
+        x: 0, y: 0
+    });
+}
+
+// Build edges: connect each node to its 2-3 nearest neighbors (by base
+// position) for a plausible-looking topology, then dedupe.
+const edgeSet = new Set();
+const edges = [];
+nodes.forEach((n, i) => {
+    const dists = nodes
+        .map((m, j) => ({ j, d: (i === j) ? Infinity : Math.hypot(n.bx - m.bx, n.by - m.by) }))
+        .sort((a, b) => a.d - b.d);
+    const linkCount = 2 + Math.floor(rng() * 2);
+    for (let k = 0; k < linkCount; k++) {
+        const j = dists[k].j;
+        const key = Math.min(i, j) + "-" + Math.max(i, j);
+        if (!edgeSet.has(key)) {
+            edgeSet.add(key);
+            edges.push({ a: i, b: j });
+        }
+    }
+});
+
+// Occasional "data flow" pulses traveling along a random edge.
+const flows = [];
+let flowTimer = 0;
+
+function spawnFlow() {
+    const e = edges[Math.floor(rng() * edges.length)];
+    const reverse = rng() > 0.5;
+    flows.push({
+        edge: e,
+        t: 0,
+        dur: 0.8 + rng() * 0.8,
+        reverse
+    });
+    // light up endpoints
+    const t = performance.now() / 1000;
+    nodes[e.a].activeUntil = t + 1.2;
+    nodes[e.b].activeUntil = t + 1.2;
+}
+
+let activeTimer = 0;
+
+function updatePositions(w, h, t) {
+    nodes.forEach(n => {
+        n.x = (n.bx + Math.sin(t * n.driftSpeed + n.phase) * n.driftAmpX) * w;
+        n.y = (n.by + Math.cos(t * n.driftSpeed * 0.8 + n.phase2) * n.driftAmpY) * h;
+    });
+}
+
+let lastTime = performance.now();
+
+function draw() {
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - lastTime) / 1000) * speed;
+    lastTime = now;
+    const t = now / 1000;
+
+    const w = canvas.width, h = canvas.height;
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(0, 0, w, h);
+
+    updatePositions(w, h, t);
+
+    // random node activation
+    activeTimer -= dt;
+    if (activeTimer <= 0) {
+        const n = nodes[Math.floor(rng() * nodes.length)];
+        n.activeUntil = t + 0.8 + rng() * 0.8;
+        activeTimer = 0.15 + rng() * 0.3;
+    }
+
+    // spawn data flows
+    flowTimer -= dt;
+    if (flowTimer <= 0 && edges.length) {
+        spawnFlow();
+        flowTimer = 0.4 + rng() * 0.9;
+    }
+
+    // edges
+    ctx.lineWidth = 1;
+    edges.forEach(e => {
+        const a = nodes[e.a], b = nodes[e.b];
+        ctx.strokeStyle = "rgba(255,255,255,0.12)";
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+    });
+
+    // active data flow pulses
+    for (let i = flows.length - 1; i >= 0; i--) {
+        const f = flows[i];
+        f.t += dt;
+        const p = Math.min(1, f.t / f.dur);
+        const a = nodes[f.edge.a], b = nodes[f.edge.b];
+        const from = f.reverse ? b : a;
+        const to = f.reverse ? a : b;
+
+        // highlight the whole edge while flow is active
+        ctx.strokeStyle = NOC.color(100, 60);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+
+        const px = from.x + (to.x - from.x) * p;
+        const py = from.y + (to.y - from.y) * p;
+        ctx.beginPath();
+        ctx.fillStyle = "#fff";
+        ctx.arc(px, py, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (f.t >= f.dur) flows.splice(i, 1);
+    }
+
+    // nodes
+    ctx.font = "13px monospace";
+    nodes.forEach(n => {
+        const isActive = t < n.activeUntil;
+        const glow = isActive ? 1 : 0.35;
+        const pulse = isActive ? 8 + Math.sin(t * 8) * 3 : 5;
+
+        if (isActive) {
+            ctx.save();
+            ctx.globalAlpha = 0.35;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, pulse + 8, 0, Math.PI * 2);
+            ctx.fillStyle = NOC.color(100, 55);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = isActive ? "#fff" : NOC.color(70, 45);
+        ctx.globalAlpha = 1;
+        ctx.fill();
+
+        ctx.fillStyle = isActive ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.55)";
+        ctx.fillText(n.label, n.x + 9, n.y - 9);
+    });
+
+    // header overlay
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.fillRect(0, 0, w, 44);
+    ctx.fillStyle = NOC.color(100, 60);
+    ctx.font = "bold 20px monospace";
+    ctx.fillText(NOC.params.title, 16, 28);
+
+    ctx.font = "14px monospace";
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.fillText("NODES: " + nodes.length + "  LINKS: " + edges.length, 16, h - 16);
+
+    requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,220 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NOC - Terminal</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+:root { --accent: #7CFC00; }
+body { color: #cdcdcd; padding: 22px 28px; box-sizing: border-box; font-size: 20px; }
+.titlebar { display: flex; justify-content: space-between; color: var(--accent); border-bottom: 1px solid #063; padding-bottom: 8px; margin-bottom: 14px; letter-spacing: 2px; font-size: 16px; }
+#term { white-space: pre-wrap; word-break: break-all; line-height: 1.35; }
+.prompt { color: var(--accent); }
+.dim { color: #6a6a6a; }
+.warn { color: #ffcc33; }
+.err { color: #ff5c5c; }
+.ok { color: #7CFC00; }
+.cursor { display: inline-block; width: 11px; height: 22px; background: var(--accent); vertical-align: text-bottom; margin-left: 1px; }
+.cursor.off { background: transparent; }
+</style>
+</head>
+<body>
+<div class="titlebar"><span id="title">TERMINAL SESSION</span><span id="host-label"></span></div>
+<div id="term"></div>
+
+<script src="lib/params.js"></script>
+<script>
+document.documentElement.style.setProperty('--accent', NOC.color(100, 55));
+document.getElementById('title').textContent = NOC.params.title || 'TERMINAL SESSION';
+
+const rng = NOC.rng;
+const speed = NOC.params.speed;
+const termEl = document.getElementById('term');
+const hostLabelEl = document.getElementById('host-label');
+
+const HOSTS = ['10.0.4.12', '10.0.4.19', '10.0.7.31'];
+const host = HOSTS[Math.floor(rng() * HOSTS.length)];
+hostLabelEl.textContent = 'admin@' + host;
+
+const PROMPT = 'admin@noc-core:~$ ';
+
+// Each step is a command plus its canned (already-computed-looking) output.
+// Output lines are objects: { text, cls } where cls is an optional css class.
+const SCRIPT = [
+    {
+        cmd: 'ssh admin@' + host,
+        out: [
+            { text: 'Last login: Wed Jul  1 09:14:22 2026 from 10.0.4.201', cls: 'dim' },
+            { text: 'Welcome to noc-core (Ubuntu 24.04 LTS)', cls: 'dim' }
+        ]
+    },
+    {
+        cmd: 'systemctl status noc-core',
+        out: [
+            { text: 'noc-core.service - NOC Core Aggregator', cls: '' },
+            { text: '     Loaded: loaded (/etc/systemd/system/noc-core.service; enabled)', cls: 'dim' },
+            { text: '     Active: active (running) since Thu 2026-07-02 03:11:07 UTC; 1 day 7h ago', cls: 'ok' },
+            { text: '   Main PID: 2231 (noc-core)', cls: 'dim' },
+            { text: '      Tasks: 14 (limit: 4915)', cls: 'dim' },
+            { text: '     Memory: 412.6M', cls: 'dim' },
+            { text: '     CGroup: /system.slice/noc-core.service', cls: 'dim' },
+            { text: '             +-2231 /usr/bin/noc-core --config /etc/noc/core.yml', cls: 'dim' }
+        ]
+    },
+    {
+        cmd: 'docker ps',
+        out: [
+            { text: 'CONTAINER ID   IMAGE                 STATUS          NAMES', cls: 'dim' },
+            { text: 'a1f3c9e02b41   noc/ingest:2.4        Up 3 days       ingest-01', cls: '' },
+            { text: 'b77de0a1229c   noc/telemetry:1.9     Up 3 days       telemetry-01', cls: '' },
+            { text: 'c02911fbea4d   noc/dash-api:3.1      Up 7 hours      dash-api-02', cls: '' },
+            { text: 'd4e8213aa901   redis:7-alpine        Up 3 days       cache-primary', cls: '' }
+        ]
+    },
+    {
+        cmd: 'tail -n 8 /var/log/app.log',
+        out: [
+            { text: '2026-07-03 10:41:52 INFO  ingest: batch 88213 committed (n=4096)', cls: 'dim' },
+            { text: '2026-07-03 10:41:55 INFO  telemetry: heartbeat ok, latency=12ms', cls: 'dim' },
+            { text: '2026-07-03 10:42:01 WARN  dash-api: slow query 812ms /v1/metrics', cls: 'warn' },
+            { text: '2026-07-03 10:42:03 INFO  ingest: batch 88214 committed (n=4096)', cls: 'dim' },
+            { text: '2026-07-03 10:42:09 ERROR cache-primary: connection reset, retrying', cls: 'err' },
+            { text: '2026-07-03 10:42:10 INFO  cache-primary: reconnected in 340ms', cls: 'ok' }
+        ]
+    },
+    {
+        cmd: 'df -h',
+        out: [
+            { text: 'Filesystem      Size  Used Avail Use% Mounted on', cls: 'dim' },
+            { text: '/dev/sda1        98G   61G   32G  66% /', cls: '' },
+            { text: '/dev/sdb1       460G  388G   49G  89% /data', cls: 'warn' },
+            { text: 'tmpfs           7.8G   12M  7.8G   1% /run', cls: '' }
+        ]
+    },
+    {
+        cmd: 'uptime',
+        out: [
+            { text: ' 10:42:31 up 128 days,  4:22,  3 users,  load average: 0.42, 0.38, 0.31', cls: 'dim' }
+        ]
+    },
+    {
+        cmd: 'ping -c 4 8.8.8.8',
+        out: [
+            { text: 'PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.', cls: 'dim' },
+            { text: '64 bytes from 8.8.8.8: icmp_seq=1 ttl=115 time=11.2 ms', cls: '' },
+            { text: '64 bytes from 8.8.8.8: icmp_seq=2 ttl=115 time=10.9 ms', cls: '' },
+            { text: '64 bytes from 8.8.8.8: icmp_seq=3 ttl=115 time=12.4 ms', cls: '' },
+            { text: '64 bytes from 8.8.8.8: icmp_seq=4 ttl=115 time=11.6 ms', cls: '' },
+            { text: '--- 8.8.8.8 ping statistics ---', cls: 'dim' },
+            { text: '4 packets transmitted, 4 received, 0% packet loss, time 3005ms', cls: 'ok' }
+        ]
+    },
+    {
+        cmd: 'exit',
+        out: [
+            { text: 'logout', cls: 'dim' },
+            { text: 'Connection to ' + host + ' closed.', cls: 'dim' }
+        ]
+    }
+];
+
+let stepIndex = 0;
+let cursorVisible = true;
+
+function appendLine(text, cls) {
+    const line = document.createElement('div');
+    if (cls) line.className = cls;
+    line.textContent = text;
+    termEl.appendChild(line);
+    trimScrollback();
+}
+
+// shared.css forces overflow:hidden on html/body, so there is no real
+// scrolling -- instead we cap visible lines and drop the oldest ones off
+// the top so the newest activity always stays on screen.
+const MAX_LINES = 26;
+function trimScrollback() {
+    while (termEl.children.length > MAX_LINES) {
+        termEl.removeChild(termEl.firstChild);
+    }
+}
+
+function startPromptLine() {
+    const line = document.createElement('div');
+    const promptSpan = document.createElement('span');
+    promptSpan.className = 'prompt';
+    promptSpan.textContent = PROMPT;
+    const typedSpan = document.createElement('span');
+    typedSpan.className = 'typed';
+    const cursorSpan = document.createElement('span');
+    cursorSpan.className = 'cursor';
+    line.appendChild(promptSpan);
+    line.appendChild(typedSpan);
+    line.appendChild(cursorSpan);
+    termEl.appendChild(line);
+    trimScrollback();
+    return { typedSpan, cursorSpan };
+}
+
+let liveCursor = null;
+
+function typeChar(target, text, i, cursorSpan, doneCb) {
+    if (i >= text.length) {
+        doneCb();
+        return;
+    }
+    target.textContent = text.substring(0, i + 1);
+    trimScrollback();
+    const jitter = 25 + rng() * 70;
+    setTimeout(() => typeChar(target, text, i + 1, cursorSpan, doneCb), jitter / speed);
+}
+
+function outputLines(lines, i, doneCb) {
+    if (i >= lines.length) {
+        doneCb();
+        return;
+    }
+    appendLine(lines[i].text, lines[i].cls);
+    setTimeout(() => outputLines(lines, i + 1, doneCb), (35 + rng() * 55) / speed);
+}
+
+function runStep() {
+    const step = SCRIPT[stepIndex];
+    const { typedSpan, cursorSpan } = startPromptLine();
+    liveCursor = cursorSpan;
+
+    setTimeout(() => {
+        typeChar(typedSpan, step.cmd, 0, cursorSpan, () => {
+            cursorSpan.remove();
+            setTimeout(() => {
+                outputLines(step.out, 0, () => {
+                    stepIndex++;
+                    const pause = (600 + rng() * 900) / speed;
+                    if (stepIndex >= SCRIPT.length) {
+                        setTimeout(() => {
+                            termEl.innerHTML = '';
+                            stepIndex = 0;
+                            runStep();
+                        }, 1400 / speed);
+                    } else {
+                        setTimeout(runStep, pause);
+                    }
+                });
+            }, 120 / speed);
+        });
+    }, 200 / speed);
+}
+
+function blinkCursor() {
+    if (liveCursor && liveCursor.isConnected) {
+        cursorVisible = !cursorVisible;
+        liveCursor.classList.toggle('off', !cursorVisible);
+    }
+    setTimeout(blinkCursor, 500);
+}
+
+runStep();
+blinkCursor();
+</script>
+</body>
+</html>

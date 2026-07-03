@@ -1,0 +1,52 @@
+networks:
+  noc-net:
+    name: noc-net
+
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: noc-mediamtx
+    restart: unless-stopped
+    networks:
+      - noc-net
+    ports:
+      - "8554:8554"   # RTSP
+      - "1935:1935"   # RTMP
+      - "8888:8888"   # HLS
+      - "8889:8889"   # WebRTC/WHEP (viewer playback)
+      - "8189:8189/udp"   # WebRTC ICE
+    volumes:
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
+
+  # Not started by `docker compose up` -- the admin panel launches instances
+  # of this image dynamically per active screen. This entry only exists so
+  # `docker compose build` builds the image.
+  capture:
+    build: ./capture
+    image: noc-simulator-capture
+    profiles: ["build-only"]
+
+  admin-panel:
+    build: ./admin-panel
+    image: noc-simulator-admin-panel
+    container_name: noc-admin-panel
+    restart: unless-stopped
+    networks:
+      - noc-net
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - CAPTURE_IMAGE=noc-simulator-capture
+      - NOC_NETWORK=noc-net
+      - MEDIAMTX_HOST=mediamtx
+      - MEDIAMTX_RTMP_PORT=1935
+      - PUBLIC_HOST=${PUBLIC_HOST:-localhost}
+      - ADMIN_INTERNAL_HOST=admin-panel
+      - MAX_CONCURRENT=${MAX_CONCURRENT:-8}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./admin-panel/data:/app/data
+      - ./screens:/screens:ro
+    depends_on:
+      - mediamtx

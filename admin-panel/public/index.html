@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NOC Simulator - Admin</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<h1>NOC Simulator - Admin Panel</h1>
+<div id="status-banner"></div>
+<p><a href="/viewer.html" target="_blank">Open Viewer (realtime screen switcher)</a></p>
+
+<table id="screens">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>URL</th>
+            <th>Res</th>
+            <th>FPS</th>
+            <th>Stream Path</th>
+            <th>Status</th>
+            <th>Playback URLs</th>
+            <th>Watch</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+</table>
+
+<h2>Add Screen</h2>
+<form id="add-form">
+    <input name="name" placeholder="Name" required>
+    <input name="url" placeholder="URL (http://admin-panel:8080/screens/matrix.html)" required size="45">
+    <input name="width" placeholder="Width" value="1920" type="number">
+    <input name="height" placeholder="Height" value="1080" type="number">
+    <input name="fps" placeholder="FPS" value="30" type="number">
+    <input name="streamPath" placeholder="stream-path" required>
+    <button type="submit">Add</button>
+</form>
+<div id="error"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

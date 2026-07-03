@@ -1,0 +1,152 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NOC - Heatmap</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="lib/params.js"></script>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const rng = NOC.rng;
+const speed = NOC.params.speed;
+const coolHue = NOC.params.hue;
+const hotHue = 18; // red-orange
+
+const COLS = 12;
+const ROWS = 8;
+const ROW_LETTERS = "ABCDEFGH";
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// per-tile value in [0,100], random-walked over time
+const values = [];
+for (let r = 0; r < ROWS; r++) {
+    const row = [];
+    for (let c = 0; c < COLS; c++) {
+        row.push(20 + rng() * 55);
+    }
+    values.push(row);
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function tileColor(v) {
+    const t = clamp(v / 100, 0, 1);
+    // interpolate hue from theme (cool) toward hot red/orange as value rises
+    let hue = coolHue + (hotHue - coolHue) * t;
+    const sat = 65 + t * 25;
+    const light = 20 + t * 30;
+    return `hsl(${hue.toFixed(1)}, ${sat.toFixed(0)}%, ${light.toFixed(0)}%)`;
+}
+
+function step() {
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            values[r][c] = clamp(values[r][c] + (rng() - 0.5) * 5 * speed, 0, 100);
+        }
+    }
+}
+
+const MARGIN_LEFT = 46;
+const MARGIN_TOP = 40;
+const MARGIN_BOTTOM = 70;
+const MARGIN_RIGHT = 24;
+
+function draw() {
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+
+    const gridW = w - MARGIN_LEFT - MARGIN_RIGHT;
+    const gridH = h - MARGIN_TOP - MARGIN_BOTTOM;
+    const cellW = gridW / COLS;
+    const cellH = gridH / ROWS;
+
+    // column labels
+    ctx.font = 'bold 14px monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.textAlign = 'center';
+    for (let c = 0; c < COLS; c++) {
+        const x = MARGIN_LEFT + c * cellW + cellW / 2;
+        ctx.fillText(String(c + 1), x, MARGIN_TOP - 12);
+    }
+
+    // row labels + tiles
+    ctx.textAlign = 'right';
+    for (let r = 0; r < ROWS; r++) {
+        const y = MARGIN_TOP + r * cellH;
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        ctx.fillText(ROW_LETTERS[r], MARGIN_LEFT - 12, y + cellH / 2 + 5);
+
+        for (let c = 0; c < COLS; c++) {
+            const x = MARGIN_LEFT + c * cellW;
+            const v = values[r][c];
+            ctx.fillStyle = tileColor(v);
+            ctx.fillRect(x + 1, y + 1, cellW - 2, cellH - 2);
+
+            ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x + 1, y + 1, cellW - 2, cellH - 2);
+
+            ctx.fillStyle = v > 60 ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.7)';
+            ctx.font = (Math.max(10, cellH * 0.28)) + 'px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(v.toFixed(0), x + cellW / 2, y + cellH / 2 + 5);
+            ctx.textAlign = 'right';
+        }
+    }
+
+    // legend / scale bar
+    const legendY = h - MARGIN_BOTTOM + 26;
+    const legendX = MARGIN_LEFT;
+    const legendW = Math.min(360, gridW);
+    const legendH = 16;
+    const steps = 60;
+    for (let i = 0; i < steps; i++) {
+        const t = i / (steps - 1);
+        ctx.fillStyle = tileColor(t * 100);
+        ctx.fillRect(legendX + (legendW / steps) * i, legendY, legendW / steps + 1, legendH);
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.strokeRect(legendX, legendY, legendW, legendH);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.font = '13px monospace';
+    ctx.fillText('COOL / LOW LOAD', legendX, legendY + legendH + 18);
+    ctx.textAlign = 'right';
+    ctx.fillText('HOT / HIGH LOAD', legendX + legendW, legendY + legendH + 18);
+
+    // title
+    ctx.textAlign = 'left';
+    ctx.font = '16px monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillText(NOC.params.title, MARGIN_LEFT, 22);
+    ctx.font = '13px monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.fillText('DATACENTER TILE LOAD MAP -- ROW/COL', w - MARGIN_RIGHT - 260, 22);
+}
+
+let lastStep = 0;
+function loop(ts) {
+    if (ts - lastStep > 900) {
+        step();
+        lastStep = ts;
+    }
+    draw();
+    requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
