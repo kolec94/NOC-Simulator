@@ -1,15 +1,29 @@
 const params = new URLSearchParams(location.search);
 let screens = [];
-let currentIndex = -1;
+let currentPath = null;
 let pc = null;
 let whepResourceUrl = null;
 let hls = null;
 let cycleTimer = null;
+let switching = false;
 
 const video = document.getElementById('video');
 const overlay = document.getElementById('overlay');
 const listEl = document.getElementById('screen-list');
 const labelEl = document.getElementById('current-label');
+const rotateToggle = document.getElementById('rotate-toggle');
+const rotateInterval = document.getElementById('rotate-interval');
+
+const SKIP_KEY = 'noc-viewer-rotate-skip';
+let skipSet = new Set(JSON.parse(localStorage.getItem(SKIP_KEY) || '[]'));
+
+function saveSkipSet() {
+    localStorage.setItem(SKIP_KEY, JSON.stringify([...skipSet]));
+}
+
+function currentIndex() {
+    return screens.findIndex((s) => s.streamPath === currentPath);
+}
 
 async function fetchRunningScreens() {
     const res = await fetch('/api/screens');
@@ -21,9 +35,28 @@ function renderList() {
     listEl.innerHTML = '';
     screens.forEach((s, i) => {
         const li = document.createElement('li');
-        li.textContent = s.name;
-        li.className = i === currentIndex ? 'active' : '';
-        li.addEventListener('click', () => switchTo(i));
+        li.className = s.streamPath === currentPath ? 'active' : '';
+
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.title = 'Skip during auto-rotate';
+        checkbox.checked = skipSet.has(s.streamPath);
+        checkbox.addEventListener('click', (e) => e.stopPropagation());
+        checkbox.addEventListener('change', () => {
+            if (checkbox.checked) skipSet.add(s.streamPath);
+            else skipSet.delete(s.streamPath);
+            saveSkipSet();
+        });
+
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(s.name));
+        label.addEventListener('click', (e) => {
+            if (e.target === checkbox) return;
+            switchTo(i);
+        });
+
+        li.appendChild(label);
         listEl.appendChild(li);
     });
 }
@@ -112,31 +145,78 @@ function playHls(streamPath) {
 
 async function switchTo(index) {
     if (index < 0 || index >= screens.length) return;
-    currentIndex = index;
-    const screen = screens[index];
-    labelEl.textContent = screen.name;
-    renderList();
-    await stopPlayback();
-
+    // WHEP negotiation takes a moment; overlapping switches (rotation
+    // timer + arrow keys + clicks) would race each other and wedge
+    // playback, so drop any switch requested mid-switch.
+    if (switching) return;
+    switching = true;
     try {
-        await playWhep(screen.streamPath);
-        video.play().catch(() => {});
-    } catch (err) {
-        console.warn('WHEP failed for', screen.streamPath, '-- falling back to HLS:', err);
+        const screen = screens[index];
+        currentPath = screen.streamPath;
+        labelEl.textContent = screen.name;
+        renderList();
         await stopPlayback();
-        try {
-            playHls(screen.streamPath);
-        } catch (err2) {
-            labelEl.textContent = screen.name + ' (playback failed)';
-            console.error(err2);
-        }
-    }
 
-    history.replaceState(null, '', `?path=${encodeURIComponent(screen.streamPath)}`);
+        try {
+            await playWhep(screen.streamPath);
+            video.play().catch(() => {});
+        } catch (err) {
+            console.warn('WHEP failed for', screen.streamPath, '-- falling back to HLS:', err);
+            await stopPlayback();
+            try {
+                playHls(screen.streamPath);
+            } catch (err2) {
+                labelEl.textContent = screen.name + ' (playback failed)';
+                console.error(err2);
+            }
+        }
+
+        history.replaceState(null, '', `?path=${encodeURIComponent(screen.streamPath)}`);
+    } finally {
+        switching = false;
+    }
 }
 
-function next() { if (screens.length) switchTo((currentIndex + 1) % screens.length); }
-function prev() { if (screens.length) switchTo((currentIndex - 1 + screens.length) % screens.length); }
+function next() {
+    if (!screens.length) return;
+    switchTo((currentIndex() + 1) % screens.length);
+}
+function prev() {
+    if (!screens.length) return;
+    switchTo((currentIndex() - 1 + screens.length) % screens.length);
+}
+
+function rotateNext() {
+    const candidates = screens
+        .map((s, i) => i)
+        .filter((i) => !skipSet.has(screens[i].streamPath));
+    if (!candidates.length) return;
+    const pos = candidates.indexOf(currentIndex());
+    const nextPos = pos === -1 ? 0 : (pos + 1) % candidates.length;
+    switchTo(candidates[nextPos]);
+}
+
+function startRotation() {
+    stopRotation();
+    const seconds = parseFloat(rotateInterval.value);
+    if (!Number.isFinite(seconds) || seconds <= 0) return;
+    cycleTimer = setInterval(rotateNext, seconds * 1000);
+}
+
+function stopRotation() {
+    if (cycleTimer) {
+        clearInterval(cycleTimer);
+        cycleTimer = null;
+    }
+}
+
+rotateToggle.addEventListener('change', () => {
+    if (rotateToggle.checked) startRotation();
+    else stopRotation();
+});
+rotateInterval.addEventListener('change', () => {
+    if (rotateToggle.checked) startRotation();
+});
 
 document.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight') next();
@@ -157,7 +237,7 @@ async function init() {
     renderList();
 
     if (screens.length === 0) {
-        labelEl.textContent = 'No screens currently running -- start one from the admin panel.';
+        labelEl.textContent = 'No screens currently running — start one from the admin panel.';
         return;
     }
 
@@ -171,13 +251,45 @@ async function init() {
 
     const cycleSeconds = parseFloat(params.get('cycle'));
     if (Number.isFinite(cycleSeconds) && cycleSeconds > 0) {
-        cycleTimer = setInterval(next, cycleSeconds * 1000);
+        rotateInterval.value = cycleSeconds;
+        rotateToggle.checked = true;
+        startRotation();
     }
 }
 
 init();
 
 setInterval(async () => {
-    screens = await fetchRunningScreens();
-    renderList();
+    try {
+        screens = await fetchRunningScreens();
+        renderList();
+    } catch { /* transient poll failure */ }
 }, 8000);
+
+// Stall watchdog: if the publisher restarts (or a WHEP session half-dies),
+// the video track ends silently and the last frame stays on screen forever.
+// Detect "playback time not advancing" and re-negotiate the current stream.
+let lastTime = -1;
+let stallTicks = 0;
+setInterval(() => {
+    if (document.hidden || switching || !screens.length || currentPath === null) {
+        stallTicks = 0;
+        return;
+    }
+    if (video.currentTime === lastTime) {
+        stallTicks++;
+    } else {
+        stallTicks = 0;
+    }
+    lastTime = video.currentTime;
+    if (stallTicks >= 3) {
+        stallTicks = 0;
+        const idx = currentIndex();
+        if (idx >= 0) {
+            console.warn('Playback stalled -- reconnecting', currentPath);
+            switchTo(idx);
+        } else if (screens.length) {
+            switchTo(0);
+        }
+    }
+}, 3000);

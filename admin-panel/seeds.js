@@ -47,7 +47,7 @@ function buildCatalog(adminHost, port) {
                 url: `${base}/${t.file}.html?${qs.toString()}`,
                 width: 1280,
                 height: 720,
-                fps: 15,
+                fps: 30,
                 streamPath
             });
 

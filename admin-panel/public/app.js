@@ -1,27 +1,43 @@
-async function fetchScreens() {
-    const [screensRes, statusRes] = await Promise.all([
-        fetch('/api/screens'),
-        fetch('/api/status')
-    ]);
-    render(await screensRes.json());
-    renderStatus(await statusRes.json());
-}
-
+const grid = document.getElementById('grid');
+const errorEl = document.getElementById('error');
 const slider = document.getElementById('max-slider');
 const numberInput = document.getElementById('max-number');
+
 let editingMax = false;
 slider.addEventListener('focus', () => { editingMax = true; });
 numberInput.addEventListener('focus', () => { editingMax = true; });
 slider.addEventListener('blur', () => { editingMax = false; });
 numberInput.addEventListener('blur', () => { editingMax = false; });
 
+let toastTimer;
+function toast(message, kind = 'error') {
+    errorEl.textContent = message;
+    errorEl.className = `toast ${kind === 'info' ? 'info' : ''}`;
+    errorEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { errorEl.hidden = true; }, 6000);
+}
+
+async function fetchScreens() {
+    try {
+        const [screensRes, statusRes] = await Promise.all([
+            fetch('/api/screens'),
+            fetch('/api/status')
+        ]);
+        render(await screensRes.json());
+        renderStatus(await statusRes.json());
+    } catch (err) {
+        /* transient poll failure -- leave current UI in place */
+    }
+}
+
 function renderStatus(status) {
     const el = document.getElementById('status-banner');
-    el.textContent = `${status.running} / ${status.max} capture streams running`;
-    el.className = status.running >= status.max ? 'banner-full' : 'banner-ok';
+    el.textContent = `${status.running} / ${status.max} streams live`;
+    el.className = 'chip ' + (status.running >= status.max ? 'banner-full' : 'banner-ok');
 
     document.getElementById('max-suggested').textContent =
-        `(${status.cores} cores detected -- suggested default: ${status.suggestedMax})`;
+        `${status.cores} cores detected — suggested max: ${status.suggestedMax}`;
 
     if (!editingMax) {
         const ceiling = Math.max(status.max, status.suggestedMax) * 3;
@@ -33,8 +49,6 @@ function renderStatus(status) {
 }
 
 async function updateMaxConcurrent(value) {
-    const errorEl = document.getElementById('error');
-    errorEl.textContent = '';
     try {
         const res = await fetch('/api/settings', {
             method: 'PUT',
@@ -43,7 +57,7 @@ async function updateMaxConcurrent(value) {
         });
         if (!res.ok) throw new Error((await res.json()).error || res.statusText);
     } catch (err) {
-        errorEl.textContent = err.message;
+        toast(err.message);
     }
 }
 
@@ -54,54 +68,116 @@ numberInput.addEventListener('change', () => {
     updateMaxConcurrent(Number(numberInput.value));
 });
 
+function urlChip(label, value) {
+    return `<button class="url-chip" data-copy="${value}" title="${value} — click to copy">${label}</button>`;
+}
+
 function render(screens) {
-    const rows = document.getElementById('rows');
-    rows.innerHTML = '';
+    grid.innerHTML = '';
     screens.forEach((s) => {
-        const tr = document.createElement('tr');
         const running = s.status === 'running';
-        tr.innerHTML = `
-            <td>${s.name}</td>
-            <td>${s.url}</td>
-            <td>${s.width}x${s.height}</td>
-            <td>${s.fps}</td>
-            <td>${s.streamPath}</td>
-            <td class="status-${s.status}">${s.status}</td>
-            <td class="urls">
-                RTSP: <code>${s.urls.rtsp}</code><br>
-                RTMP: <code>${s.urls.rtmp}</code><br>
-                HLS: <code>${s.urls.hls}</code>
-            </td>
-            <td>
-                <a href="/viewer.html?path=${encodeURIComponent(s.streamPath)}" target="_blank" ${running ? '' : 'style="pointer-events:none;opacity:0.4"'}>Watch</a>
-            </td>
-            <td>
-                <button data-action="start" data-id="${s.id}" ${running ? 'disabled' : ''}>Start</button>
-                <button data-action="stop" data-id="${s.id}" ${!running ? 'disabled' : ''}>Stop</button>
-                <button data-action="delete" data-id="${s.id}" class="danger">Delete</button>
-            </td>
+        const card = document.createElement('div');
+        card.className = `card is-${s.status}`;
+        card.innerHTML = `
+            <div class="card-head">
+                <div class="card-title" title="${s.name}">${s.name}</div>
+                <span class="pill pill-${s.status}">${s.status}</span>
+            </div>
+            <div class="card-meta">
+                <span>${s.width}×${s.height}</span>
+                <span>${s.fps} fps</span>
+                <span>${s.streamPath}</span>
+            </div>
+            <div class="card-urls">
+                ${urlChip('RTSP', s.urls.rtsp)}
+                ${urlChip('RTMP', s.urls.rtmp)}
+                ${urlChip('HLS', s.urls.hls)}
+                ${urlChip('WHEP', s.urls.whep)}
+            </div>
+            <div class="card-actions">
+                <button class="btn btn-sm ${running ? '' : 'btn-primary'}"
+                        data-action="${running ? 'stop' : 'start'}" data-id="${s.id}">
+                    ${running ? '■ Stop' : '▶ Start'}
+                </button>
+                <a class="watch-link ${running ? '' : 'disabled'}"
+                   href="/viewer.html?path=${encodeURIComponent(s.streamPath)}" target="_blank">Watch →</a>
+                <span class="spacer"></span>
+                <button class="btn btn-sm btn-danger-ghost" data-action="delete" data-id="${s.id}">✕</button>
+            </div>
         `;
-        rows.appendChild(tr);
+        grid.appendChild(card);
     });
 }
 
-document.getElementById('rows').addEventListener('click', async (e) => {
-    const btn = e.target.closest('button');
+grid.addEventListener('click', async (e) => {
+    const copyBtn = e.target.closest('.url-chip');
+    if (copyBtn) {
+        try {
+            await navigator.clipboard.writeText(copyBtn.dataset.copy);
+            copyBtn.classList.add('copied');
+            setTimeout(() => copyBtn.classList.remove('copied'), 1200);
+        } catch { toast('Clipboard unavailable'); }
+        return;
+    }
+
+    const btn = e.target.closest('button[data-action]');
     if (!btn) return;
     const { action, id } = btn.dataset;
-    const errorEl = document.getElementById('error');
-    errorEl.textContent = '';
     try {
         if (action === 'delete') {
             if (!confirm('Delete this screen?')) return;
             await fetch(`/api/screens/${id}`, { method: 'DELETE' });
         } else {
+            btn.disabled = true;
             const res = await fetch(`/api/screens/${id}/${action}`, { method: 'POST' });
             if (!res.ok) throw new Error((await res.json()).error || res.statusText);
         }
         await fetchScreens();
     } catch (err) {
-        errorEl.textContent = err.message;
+        toast(err.message);
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+document.getElementById('start-all').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = 'Starting…';
+    try {
+        const res = await fetch('/api/screens/start-all', { method: 'POST' });
+        if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+        const { started, alreadyRunning, skipped, failed } = await res.json();
+        const parts = [`started ${started}`];
+        if (alreadyRunning) parts.push(`${alreadyRunning} already live`);
+        if (skipped) parts.push(`${skipped} over the concurrency cap`);
+        if (failed) parts.push(`${failed} failed`);
+        toast(parts.join(', '), skipped || failed ? 'error' : 'info');
+        await fetchScreens();
+    } catch (err) {
+        toast(err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '▶ Start All';
+    }
+});
+
+document.getElementById('stop-all').addEventListener('click', async (e) => {
+    if (!confirm('Stop ALL running screens?')) return;
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = 'Stopping…';
+    try {
+        const res = await fetch('/api/screens/stop-all', { method: 'POST' });
+        if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+        const { stopped, failed } = await res.json();
+        toast(`Stopped ${stopped}${failed ? `, ${failed} failed` : ''}`, failed ? 'error' : 'info');
+        await fetchScreens();
+    } catch (err) {
+        toast(err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '■ Stop All';
     }
 });
 
@@ -116,8 +192,6 @@ document.getElementById('add-form').addEventListener('submit', async (e) => {
         fps: Number(form.fps.value),
         streamPath: form.streamPath.value
     };
-    const errorEl = document.getElementById('error');
-    errorEl.textContent = '';
     try {
         const res = await fetch('/api/screens', {
             method: 'POST',
@@ -131,7 +205,7 @@ document.getElementById('add-form').addEventListener('submit', async (e) => {
         form.fps.value = 30;
         await fetchScreens();
     } catch (err) {
-        errorEl.textContent = err.message;
+        toast(err.message);
     }
 });
 

@@ -1,5 +1,7 @@
 # Minimal MediaMTX config for the NOC Simulator.
-# Capture containers publish via RTMP; players can pull via RTSP, RTMP, or HLS.
+# Capture containers publish via RTMP (software/libx264) or RTSP
+# (VAAPI-encoded -- the driver can't build the global header RTMP/FLV
+# needs); players can pull via RTSP, RTMP, or HLS either way.
 
 logLevel: info
 

@@ -2,48 +2,53 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>NOC Simulator - Admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NOC Simulator — Admin</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>NOC Simulator - Admin Panel</h1>
-<div id="status-banner"></div>
-<div id="max-control">
-    <label for="max-slider">Max concurrent streams:</label>
-    <input type="range" id="max-slider" min="1" max="1" value="1">
-    <input type="number" id="max-number" min="1" value="1">
-    <span id="max-suggested"></span>
-</div>
-<p><a href="/viewer.html" target="_blank">Open Viewer (realtime screen switcher)</a></p>
 
-<table id="screens">
-    <thead>
-        <tr>
-            <th>Name</th>
-            <th>URL</th>
-            <th>Res</th>
-            <th>FPS</th>
-            <th>Stream Path</th>
-            <th>Status</th>
-            <th>Playback URLs</th>
-            <th>Watch</th>
-            <th>Actions</th>
-        </tr>
-    </thead>
-    <tbody id="rows"></tbody>
-</table>
+<header class="topbar">
+    <div class="brand">
+        <span class="brand-dot"></span>
+        <h1>NOC<span>SIMULATOR</span></h1>
+    </div>
+    <div id="status-banner" class="chip">—</div>
+    <div class="topbar-actions">
+        <a class="btn btn-ghost" href="/viewer.html" target="_blank">⧉ Open Viewer</a>
+        <button id="start-all" class="btn btn-primary">▶ Start All</button>
+        <button id="stop-all" class="btn btn-danger-ghost">■ Stop All</button>
+    </div>
+</header>
 
-<h2>Add Screen</h2>
-<form id="add-form">
-    <input name="name" placeholder="Name" required>
-    <input name="url" placeholder="URL (http://admin-panel:8080/screens/matrix.html)" required size="45">
-    <input name="width" placeholder="Width" value="1920" type="number">
-    <input name="height" placeholder="Height" value="1080" type="number">
-    <input name="fps" placeholder="FPS" value="30" type="number">
-    <input name="streamPath" placeholder="stream-path" required>
-    <button type="submit">Add</button>
-</form>
-<div id="error"></div>
+<section class="controls">
+    <div class="control-card">
+        <label for="max-slider">Max concurrent streams</label>
+        <div class="control-row">
+            <input type="range" id="max-slider" min="1" max="1" value="1">
+            <input type="number" id="max-number" min="1" value="1">
+        </div>
+        <span id="max-suggested" class="muted"></span>
+    </div>
+    <details class="control-card add-card">
+        <summary>+ Add screen</summary>
+        <form id="add-form">
+            <input name="name" placeholder="Name" required>
+            <input name="url" placeholder="URL (http://admin-panel:8080/screens/matrix.html)" required>
+            <div class="form-row">
+                <input name="width" placeholder="Width" value="1920" type="number">
+                <input name="height" placeholder="Height" value="1080" type="number">
+                <input name="fps" placeholder="FPS" value="30" type="number">
+                <input name="streamPath" placeholder="stream-path" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Add screen</button>
+        </form>
+    </details>
+</section>
+
+<div id="error" class="toast" hidden></div>
+
+<main id="grid" class="grid"></main>
 
 <script src="app.js"></script>
 </body>

@@ -6,6 +6,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     fonts-freefont-ttf \
     dumb-init \
+    mesa-va-drivers \
+    libva2 \
+    vainfo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY capture.sh /usr/local/bin/capture.sh
@@ -18,6 +21,7 @@ ENV HEIGHT=1080
 ENV FPS=30
 ENV MEDIAMTX_HOST=mediamtx
 ENV MEDIAMTX_RTMP_PORT=1935
+ENV MEDIAMTX_RTSP_PORT=8554
 ENV BITRATE=3000k
 
 ENTRYPOINT ["dumb-init", "--"]
